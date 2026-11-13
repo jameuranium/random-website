@@ -701,11 +701,10 @@ def settings_menu():
                     # Sound toggle
                     if sound_button.collidepoint(event.pos):
                         SOUND_ON = not SOUND_ON
-                        if MIXER_READY:
-                            if not SOUND_ON:
-                                pygame.mixer.music.pause()
-                            else:
-                                pygame.mixer.music.unpause()
+                        if not SOUND_ON and MIXER_READY:
+                            pygame.mixer.music.pause()
+                        elif SOUND_ON:
+                            play_menu_music()
                         message = f"Sound: {'ON' if SOUND_ON else 'OFF'}"
                         message_color = YELLOW
                         message_time = current_time
@@ -1495,6 +1494,7 @@ def buy_item(item_id):
 MUSIC_DIR = os.path.join(BASE_DIR, "Music")
 
 GAME_MUSIC = {
+    "MENU": os.path.join(MUSIC_DIR, "MenuBackgroundMusic.mp3"),
     "SNAKE": os.path.join(MUSIC_DIR, "SnakeGameBackgroundMusic.mp3"),
     "TIC TAC TOE": os.path.join(MUSIC_DIR, "TicTacToeGameBackgroundMusic.mp3"),
     "MINESWEEPER": os.path.join(MUSIC_DIR, "MinesweeperGameBackgroundMusic.mp3"),
@@ -1511,8 +1511,12 @@ GAME_MUSIC = {
     "FRUIT NINJA": os.path.join(MUSIC_DIR, "FruitNinjaGameBackgroundMusic.mp3")
 }
 
+CURRENT_MUSIC_FILE = None
+
 
 def play_music(game):
+    global CURRENT_MUSIC_FILE
+
     if not SOUND_ON or not MIXER_READY:
         return
 
@@ -1522,15 +1526,24 @@ def play_music(game):
         return
 
     try:
+        if CURRENT_MUSIC_FILE == music_file and pygame.mixer.music.get_busy():
+            return
         pygame.mixer.music.load(music_file)
         pygame.mixer.music.set_volume(0.5)
         pygame.mixer.music.play(-1)
+        CURRENT_MUSIC_FILE = music_file
     except pygame.error as error:
         print(f"Could not play {game} music:", error)
 
+def play_menu_music():
+    play_music("MENU")
+
 def stop_music():
+    global CURRENT_MUSIC_FILE
+
     if MIXER_READY:
         pygame.mixer.music.stop()
+    CURRENT_MUSIC_FILE = None
 
 # ACHIEVEMENT SYSTEM
 
@@ -2291,6 +2304,7 @@ def launch_game(game):
     game_name = game[0]
     game_function = game[3]
 
+    stop_music()
     game_function()
 
     reward = GAME_REWARDS.get(game_name, {"coins": 5, "xp": 5})
@@ -2325,6 +2339,7 @@ def start_menu():
     daily_message = ""
     daily_message_time = 0
 
+    play_menu_music()
     while True:
         current_time = pygame.time.get_ticks()
 
@@ -2897,6 +2912,7 @@ def game_select_menu():
     achievement_button = pygame.Rect(WIDTH // 2 - 110, 475, 220, 45)
     settings_button = pygame.Rect(WIDTH - 45, 15, 30, 30)  # Small settings button
 
+    play_menu_music()
     while True:
         dt = clock.get_time() / 1000
         display_selected += (selected - display_selected) * min(1, dt * animation_speed)
@@ -2917,10 +2933,12 @@ def game_select_menu():
                         selected = 0
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                     launch_game(games[selected])
+                    play_menu_music()
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     if play_button.collidepoint(event.pos):
                         launch_game(games[selected])
+                        play_menu_music()
                     elif achievement_button.collidepoint(event.pos):
                         achievement_menu()
                     elif settings_button.collidepoint(event.pos):
