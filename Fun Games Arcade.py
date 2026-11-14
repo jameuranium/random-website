@@ -7,8 +7,6 @@ import time
 
 pygame.init()
 
-# SETTINGS
-
 WIDTH = 600
 HEIGHT = 600
 
@@ -17,15 +15,12 @@ pygame.display.set_caption("Fun Games Arcade - Play fun without WIFI")
 
 clock = pygame.time.Clock()
 
-# Initialize mixer safely; some environments lack a valid audio device.
 MIXER_READY = False
 try:
     pygame.mixer.init()
     MIXER_READY = True
 except Exception:
     MIXER_READY = False
-
-# DATA DIRECTORIES
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -40,7 +35,7 @@ DAILY_CHALLENGE_FILE = os.path.join(DATA_DIR, "daily_challenges.json")
 
 
 def safe_set_window_icon():
-    """Set the window icon if an image is available without crashing."""
+    
     try:
         if not hasattr(pygame, "image") or not hasattr(pygame.display, "set_icon"):
             return
@@ -51,11 +46,7 @@ def safe_set_window_icon():
     except Exception:
         pass
 
-
-# Safe asset loading for systems without the bundled icon or sound files.
 safe_set_window_icon()
-
-# GLOBAL VARIABLES
 
 CHEAT_HISTORY = {
     "IAMNOOB": {"active": False, "powerups_added": 0},
@@ -65,17 +56,15 @@ CHEAT_HISTORY = {
     "GODMODE": {"active": False, "powerups_added": 0, "coins_added": 0, "xp_added": 0}
 }
 
-# ICON
 pygame.display.set_mode((WIDTH, HEIGHT))
 safe_set_window_icon()
-# ACCOUNT SYSTEM
 
 def get_account_file(username):
-    """Get the file path for a specific account"""
+    
     return os.path.join(ACCOUNTS_DIR, f"{username}.json")
 
 def get_default_account_data(username):
-    """Get default account data structure"""
+    
     return {
         "username": username,
         "created_at": time.time(),
@@ -84,6 +73,7 @@ def get_default_account_data(username):
             "coins": 0,
             "xp": 0,
             "level": 1,
+            "challenge_mode": False,
             "total_games_played": 0,
             "total_score": 0,
             "inventory": {
@@ -104,6 +94,11 @@ def get_default_account_data(username):
             },
             "cosmetics": {
                 "theme": "DEFAULT",
+                "custom_theme": {
+                    "background": [12, 14, 25],
+                    "panel": [30, 33, 50],
+                    "accent": [80, 120, 255]
+                },
                 "snake_color": "GREEN",
                 "paddle_color": "BLUE",
                 "ball_color": "WHITE",
@@ -161,7 +156,7 @@ def get_default_account_data(username):
     }
 
 def create_account(username):
-    """Create a new account"""
+    
     if not username or len(username) < 2:
         return False, "Username must be at least 2 characters!"
     
@@ -173,7 +168,6 @@ def create_account(username):
     
     account_data = get_default_account_data(username)
     
-    # Initialize achievements
     for achievement_id in ACHIEVEMENTS:
         account_data["achievements"][achievement_id] = False
     
@@ -185,7 +179,7 @@ def create_account(username):
         return False, f"Error creating account: {str(e)}"
 
 def normalize_account_data(account_data, username):
-    """Upgrade older saved account files with the latest fields."""
+    
     default_data = get_default_account_data(username)
     merged = default_data.copy()
     merged.update(account_data or {})
@@ -197,7 +191,13 @@ def normalize_account_data(account_data, username):
         merged["player_data"]["inventory"].setdefault(inventory_key, default_value)
 
     merged["player_data"]["cosmetics"] = default_data["player_data"]["cosmetics"].copy()
-    merged["player_data"]["cosmetics"].update(account_data.get("player_data", {}).get("cosmetics", {}) if account_data else {})
+    saved_cosmetics = account_data.get("player_data", {}).get("cosmetics", {}) if account_data else {}
+    if isinstance(saved_cosmetics, dict):
+        merged["player_data"]["cosmetics"].update(saved_cosmetics)
+    custom_theme = default_data["player_data"]["cosmetics"]["custom_theme"].copy()
+    if isinstance(saved_cosmetics.get("custom_theme"), dict):
+        custom_theme.update(saved_cosmetics["custom_theme"])
+    merged["player_data"]["cosmetics"]["custom_theme"] = custom_theme
 
     merged["player_data"]["unlocked"] = default_data["player_data"]["unlocked"].copy()
     user_unlocked = account_data.get("player_data", {}).get("unlocked", {}) if account_data else {}
@@ -230,7 +230,7 @@ def normalize_account_data(account_data, username):
 
 
 def load_account(username):
-    """Load an account's data"""
+    
     try:
         with open(get_account_file(username), "r") as file:
             account_data = json.load(file)
@@ -239,7 +239,7 @@ def load_account(username):
         return None
 
 def save_account(username, data):
-    """Save account data"""
+    
     try:
         data["last_played"] = time.time()
         with open(get_account_file(username), "w") as file:
@@ -249,7 +249,7 @@ def save_account(username, data):
         return False
 
 def list_accounts():
-    """List all available accounts"""
+    
     accounts = []
     if os.path.exists(ACCOUNTS_DIR):
         for file in os.listdir(ACCOUNTS_DIR):
@@ -258,7 +258,7 @@ def list_accounts():
     return sorted(accounts)
 
 def delete_account(username):
-    """Delete an account"""
+    
     try:
         if os.path.exists(get_account_file(username)):
             os.remove(get_account_file(username))
@@ -268,10 +268,9 @@ def delete_account(username):
         return False, f"Error deleting account: {str(e)}"
 
 def switch_account(username):
-    """Switch to a different account"""
+    
     global player_data, highscores, achievements
     
-    # Save current account first if logged in
     current_user = get_current_session()
     if current_user:
         save_current_account(current_user)
@@ -280,24 +279,22 @@ def switch_account(username):
     if not account_data:
         return False, "Account not found!"
     
-    # Load account data into global variables
     player_data = account_data["player_data"]
     highscores = account_data["highscores"]
     achievements = account_data["achievements"]
     
-    # Save session
     save_session(username)
     
     return True, f"Welcome back, {username}!"
 
 def save_current_account(username):
-    """Save the current session to the account"""
+    
     account_data = load_account(username)
     if account_data:
         account_data["player_data"] = player_data
         account_data["highscores"] = highscores
         account_data["achievements"] = achievements
-        # Update statistics
+
         account_data["statistics"]["total_coins_earned"] = player_data["coins"]
         account_data["statistics"]["total_xp_earned"] = player_data["xp"]
         save_account(username, account_data)
@@ -305,7 +302,7 @@ def save_current_account(username):
     return False
 
 def save_session(username):
-    """Save the current session"""
+    
     try:
         with open(SESSION_FILE, "w") as file:
             json.dump({"username": username, "timestamp": time.time()}, file, indent=4)
@@ -314,7 +311,7 @@ def save_session(username):
         return False
 
 def get_current_session():
-    """Get the current logged in user"""
+    
     try:
         if os.path.exists(SESSION_FILE):
             with open(SESSION_FILE, "r") as file:
@@ -325,7 +322,7 @@ def get_current_session():
     return None
 
 def clear_session():
-    """Clear the current session"""
+    
     try:
         if os.path.exists(SESSION_FILE):
             os.remove(SESSION_FILE)
@@ -334,7 +331,7 @@ def clear_session():
         return False
 
 def logout_account():
-    """Logout the current account"""
+    
     global player_data, highscores, achievements
     
     current_user = get_current_session()
@@ -342,7 +339,6 @@ def logout_account():
         save_current_account(current_user)
         clear_session()
         
-        # Reset to default data
         player_data = DEFAULT_PLAYER_DATA.copy()
         highscores = DEFAULT_HIGHSCORES.copy()
         achievements = load_achievements()
@@ -351,14 +347,12 @@ def logout_account():
     return False, "No account logged in!"
 
 def delete_account_with_data(username):
-    """Delete an account and all its data"""
+    
     current_user = get_current_session()
     if current_user == username:
         logout_account()
     
     return delete_account(username)
-
-# COLORS
 
 BLACK = (20, 20, 20)
 WHITE = (255, 255, 255)
@@ -402,12 +396,36 @@ BUTTON_ORANGE_HOVER = (240, 140, 40)
 BUTTON_GRAY = (90, 90, 90)
 BUTTON_GRAY_HOVER = (130, 130, 130)
 
-# SETTINGS DEFINE
+THEME_STYLES = {
+    "DEFAULT": {"background": (12, 14, 25), "panel": (30, 33, 50), "accent": (80, 120, 255)},
+    "DARK": {"background": (10, 10, 20), "panel": (25, 25, 38), "accent": (120, 130, 170)},
+    "NEON": {"background": (20, 10, 30), "panel": (35, 18, 48), "accent": (0, 255, 170)},
+    "RETRO": {"background": (30, 20, 10), "panel": (55, 35, 20), "accent": (255, 175, 55)},
+    "OCEAN": {"background": (10, 20, 40), "panel": (18, 40, 65), "accent": (50, 200, 230)},
+}
+
+
+def get_theme_style(theme=None):
+    
+    theme = theme or player_data["cosmetics"].get("theme", "DEFAULT")
+    if theme == "CUSTOM":
+        custom = player_data["cosmetics"].get("custom_theme", {})
+        style = {}
+        for key in ("background", "panel", "accent"):
+            color = custom.get(key)
+            if (
+                isinstance(color, (list, tuple))
+                and len(color) == 3
+                and all(isinstance(component, int) and 0 <= component <= 255 for component in color)
+            ):
+                style[key] = tuple(color)
+            else:
+                style[key] = THEME_STYLES["DEFAULT"][key]
+        return style
+    return THEME_STYLES.get(theme, THEME_STYLES["DEFAULT"])
 
 SOUND_ON = True
 FULLSCREEN = False
-
-# CHEAT CODES
 
 CHEAT_CODES = {
     "IAMNOOB": {"description": "Make game easier (1 use)", "used": False, "effects": []},
@@ -418,22 +436,19 @@ CHEAT_CODES = {
     "RESET": {"description": "Reset all cheat code uses", "used": False, "effects": []}
 }
 
-# Track active cheat effects
 ACTIVE_CHEAT_EFFECTS = {
-    "powerup_bonus": 0,  # How many extra powerups were given
-    "coins_bonus": 0,    # How many extra coins were given
-    "xp_bonus": 0,       # How much extra XP was given
+    "powerup_bonus": 0,
+    "coins_bonus": 0,
+    "xp_bonus": 0,
     "unlocked_all": False
 }
 
 def process_cheat_code(code):
-    """Process a cheat code and apply its effects"""
     global player_data, highscores, CHEAT_HISTORY
     
     if code not in CHEAT_CODES:
         return False, "Invalid cheat code!"
     
-    # Check if already used (except for RESET)
     if CHEAT_CODES[code].get("used", False) and code != "RESET":
         return False, f"Cheat '{code}' already used!"
     
@@ -466,19 +481,16 @@ def process_cheat_code(code):
         CHEAT_HISTORY["UNLOCKALL"]["active"] = True
         CHEAT_HISTORY["UNLOCKALL"]["unlocked"] = True
         
-        # Unlock all themes
-        all_themes = ["DEFAULT", "DARK", "NEON", "RETRO", "OCEAN"]
+        all_themes = ["DEFAULT", "DARK", "NEON", "RETRO", "OCEAN", "CUSTOM"]
         for theme in all_themes:
             if theme not in player_data["unlocked"]["themes"]:
                 player_data["unlocked"]["themes"].append(theme)
         
-        # Unlock all colors
         all_colors = ["GREEN", "BLUE", "WHITE", "YELLOW", "GOLD", "PURPLE", "PINK", "RED", "ORANGE"]
         for color in all_colors:
             if color not in player_data["unlocked"]["colors"]:
                 player_data["unlocked"]["colors"].append(color)
         
-        # Unlock all features
         all_features = ["AUTO_SAVE", "STATS", "DAILY_BONUS"]
         for feature in all_features:
             if feature not in player_data["unlocked"]["features"]:
@@ -494,7 +506,6 @@ def process_cheat_code(code):
         CHEAT_HISTORY["GODMODE"]["coins_added"] = 500
         CHEAT_HISTORY["GODMODE"]["xp_added"] = 500
         
-        # Give max powerups for all games
         for item in player_data["inventory"]:
             player_data["inventory"][item] += 10
         add_coins(500)
@@ -503,17 +514,15 @@ def process_cheat_code(code):
         return True, "GOD MODE activated! +10 all powerups, +500 coins, +500 XP!"
     
     elif code == "RESET":
-        # Remove all cheat effects
         return reset_cheat_effects()
     
     return False, "Unknown cheat code!"
 
 def reset_cheat_effects():
-    """Reset all cheat effects and flags"""
+    
     global player_data, CHEAT_HISTORY
     
     try:
-        # Remove IAMNOOB effects
         if CHEAT_HISTORY["IAMNOOB"]["active"]:
             powerups_to_remove = CHEAT_HISTORY["IAMNOOB"]["powerups_added"]
             for item in player_data["inventory"]:
@@ -521,32 +530,26 @@ def reset_cheat_effects():
             CHEAT_HISTORY["IAMNOOB"]["active"] = False
             CHEAT_HISTORY["IAMNOOB"]["powerups_added"] = 0
         
-        # Remove GIVEMECOINS effects
         if CHEAT_HISTORY["GIVEMECOINS"]["active"]:
             coins_to_remove = CHEAT_HISTORY["GIVEMECOINS"]["coins_added"]
             player_data["coins"] = max(0, player_data["coins"] - coins_to_remove)
             CHEAT_HISTORY["GIVEMECOINS"]["active"] = False
             CHEAT_HISTORY["GIVEMECOINS"]["coins_added"] = 0
         
-        # Remove LEVELUPS effects
         if CHEAT_HISTORY["LEVELUPS"]["active"]:
             xp_to_remove = CHEAT_HISTORY["LEVELUPS"]["xp_added"]
             player_data["xp"] = max(0, player_data["xp"] - xp_to_remove)
             CHEAT_HISTORY["LEVELUPS"]["active"] = False
             CHEAT_HISTORY["LEVELUPS"]["xp_added"] = 0
         
-        # Remove GODMODE effects
         if CHEAT_HISTORY["GODMODE"]["active"]:
-            # Remove powerups
             powerups_to_remove = CHEAT_HISTORY["GODMODE"]["powerups_added"]
             for item in player_data["inventory"]:
                 player_data["inventory"][item] = max(0, player_data["inventory"][item] - powerups_to_remove)
             
-            # Remove coins
             coins_to_remove = CHEAT_HISTORY["GODMODE"]["coins_added"]
             player_data["coins"] = max(0, player_data["coins"] - coins_to_remove)
             
-            # Remove XP
             xp_to_remove = CHEAT_HISTORY["GODMODE"]["xp_added"]
             player_data["xp"] = max(0, player_data["xp"] - xp_to_remove)
             
@@ -555,20 +558,15 @@ def reset_cheat_effects():
             CHEAT_HISTORY["GODMODE"]["coins_added"] = 0
             CHEAT_HISTORY["GODMODE"]["xp_added"] = 0
         
-        # Note: UNLOCKALL effects are permanent (we don't remove unlocks)
-        # But we mark it as inactive so it can be used again if desired
         if CHEAT_HISTORY["UNLOCKALL"]["active"]:
             CHEAT_HISTORY["UNLOCKALL"]["active"] = False
             CHEAT_HISTORY["UNLOCKALL"]["unlocked"] = False
         
-        # Reset all cheat used flags
         for cheat in CHEAT_CODES:
             CHEAT_CODES[cheat]["used"] = False
         
-        # Save the changes
         save_player_data(player_data)
         
-        # Recalculate level from XP
         new_level = get_level_from_xp(player_data["xp"])
         player_data["level"] = new_level
         save_player_data(player_data)
@@ -579,19 +577,14 @@ def reset_cheat_effects():
         return False, f"Error resetting cheats: {str(e)}"
 
 def reset_all_cheats():
-    """Reset all cheat codes without removing effects (for testing)"""
     for cheat in CHEAT_CODES:
         CHEAT_CODES[cheat]["used"] = False
     return True, "All cheat codes reset!"
-
-# FONTS
 
 font = pygame.font.SysFont("Arial", 25)
 small_font = pygame.font.SysFont("Arial", 18)
 big_font = pygame.font.SysFont("Arial", 55, bold=True)
 button_font = pygame.font.SysFont("Arial", 25, bold=True)
-
-# TEXT / BUTTON HELPERS
 
 def draw_text(text, font_type, color, x, y):
     surface = font_type.render(text, True, color)
@@ -644,18 +637,18 @@ def quit_game():
     pygame.quit()
     sys.exit()
 
-# SETTINGS MENU
-
 def settings_menu():
-    """Display the settings menu with sound, fullscreen, and cheat codes"""
+    
     global SOUND_ON, FULLSCREEN, screen
     
-    settings_panel = pygame.Rect(WIDTH - 280, 60, 260, 380)
+    theme_style = get_theme_style()
+    settings_panel = pygame.Rect(WIDTH - 280, 50, 260, 510)
     close_button = pygame.Rect(WIDTH - 55, 15, 30, 30)
     sound_button = pygame.Rect(WIDTH - 260, 80, 220, 35)
     fullscreen_button = pygame.Rect(WIDTH - 260, 130, 220, 35)
-    cheat_input_rect = pygame.Rect(WIDTH - 260, 190, 220, 35)
-    cheat_submit_rect = pygame.Rect(WIDTH - 260, 235, 220, 35)
+    challenge_button = pygame.Rect(WIDTH - 260, 180, 220, 35)
+    cheat_input_rect = pygame.Rect(WIDTH - 260, 270, 220, 35)
+    cheat_submit_rect = pygame.Rect(WIDTH - 260, 315, 220, 35)
     
     cheat_input = ""
     message = ""
@@ -674,7 +667,6 @@ def settings_menu():
                 if event.key == pygame.K_ESCAPE:
                     return
                 
-                # Handle cheat input
                 if event.key == pygame.K_BACKSPACE:
                     cheat_input = cheat_input[:-1]
                 elif event.key == pygame.K_RETURN:
@@ -694,11 +686,9 @@ def settings_menu():
             
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    # Close button
                     if close_button.collidepoint(event.pos):
                         return
                     
-                    # Sound toggle
                     if sound_button.collidepoint(event.pos):
                         SOUND_ON = not SOUND_ON
                         if not SOUND_ON and MIXER_READY:
@@ -709,7 +699,6 @@ def settings_menu():
                         message_color = YELLOW
                         message_time = current_time
                     
-                    # Fullscreen toggle
                     if fullscreen_button.collidepoint(event.pos):
                         FULLSCREEN = not FULLSCREEN
                         if FULLSCREEN:
@@ -719,8 +708,16 @@ def settings_menu():
                         message = f"Fullscreen: {'ON' if FULLSCREEN else 'OFF'}"
                         message_color = YELLOW
                         message_time = current_time
-                    
-                    # Cheat submit
+
+                    if challenge_button.collidepoint(event.pos):
+                        player_data["challenge_mode"] = not player_data.get("challenge_mode", False)
+                        save_player_data(player_data)
+                        current_user = get_current_session()
+                        if current_user:
+                            save_current_account(current_user)
+                        message = f"Challenge mode: {'ON' if player_data['challenge_mode'] else 'OFF'}"
+                        message_color = YELLOW
+                        message_time = current_time
                     if cheat_submit_rect.collidepoint(event.pos) and cheat_input:
                         success, msg = process_cheat_code(cheat_input.upper())
                         if success:
@@ -733,70 +730,74 @@ def settings_menu():
                             message_color = RED
                             message_time = current_time
         
-        # Draw settings panel
-        pygame.draw.rect(screen, (20, 25, 45), settings_panel, border_radius=15)
-        pygame.draw.rect(screen, (60, 70, 120), settings_panel, 2, border_radius=15)
+        pygame.draw.rect(screen, theme_style["panel"], settings_panel, border_radius=15)
+        pygame.draw.rect(screen, theme_style["accent"], settings_panel, 2, border_radius=15)
         
-        # Title
         draw_text("SETTINGS", big_font, WHITE, WIDTH - 150, 45)
         
-        # Close button (X)
-        pygame.draw.rect(screen, (60, 60, 80), close_button, border_radius=8)
-        pygame.draw.rect(screen, (150, 150, 150), close_button, 2, border_radius=8)
+        pygame.draw.rect(screen, theme_style["background"], close_button, border_radius=8)
+        pygame.draw.rect(screen, theme_style["accent"], close_button, 2, border_radius=8)
         draw_text("✕", font, WHITE, WIDTH - 40, 30)
         
-        # Sound toggle
         sound_text = f"🔊 Sound: {'ON' if SOUND_ON else 'OFF'}"
         sound_color = GREEN if SOUND_ON else RED
         if sound_button.collidepoint(mouse_pos):
-            pygame.draw.rect(screen, (50, 55, 80), sound_button, border_radius=8)
+            pygame.draw.rect(screen, theme_style["background"], sound_button, border_radius=8)
         else:
-            pygame.draw.rect(screen, (30, 35, 60), sound_button, border_radius=8)
+            pygame.draw.rect(screen, theme_style["panel"], sound_button, border_radius=8)
         draw_text(sound_text, small_font, sound_color, WIDTH - 150, 97)
         
-        # Fullscreen toggle
         fullscreen_text = f"🖥️ Fullscreen: {'ON' if FULLSCREEN else 'OFF'}"
         fullscreen_color = GREEN if FULLSCREEN else RED
         if fullscreen_button.collidepoint(mouse_pos):
-            pygame.draw.rect(screen, (50, 55, 80), fullscreen_button, border_radius=8)
+            pygame.draw.rect(screen, theme_style["background"], fullscreen_button, border_radius=8)
         else:
-            pygame.draw.rect(screen, (30, 35, 60), fullscreen_button, border_radius=8)
+            pygame.draw.rect(screen, theme_style["panel"], fullscreen_button, border_radius=8)
         draw_text(fullscreen_text, small_font, fullscreen_color, WIDTH - 150, 147)
         
-        # Cheat code section
-        draw_text("CHEAT CODES", font, YELLOW, WIDTH - 150, 185)
+        challenge_enabled = player_data.get("challenge_mode", False)
+        challenge_color = BUTTON_RED if challenge_enabled else BUTTON_GRAY
+        challenge_hover = BUTTON_RED_HOVER if challenge_enabled else BUTTON_GRAY_HOVER
+        draw_button(
+            challenge_button,
+            f"CHALLENGE: {'ON' if challenge_enabled else 'OFF'}",
+            challenge_color,
+            challenge_hover,
+        )
+        draw_text("+50% coins and XP - harder games", small_font, YELLOW, WIDTH - 150, 230)
+
+        draw_text("CHEAT CODES", font, YELLOW, WIDTH - 150, 252)
         
-        # Cheat input box
         pygame.draw.rect(screen, (30, 35, 60), cheat_input_rect, border_radius=8)
         pygame.draw.rect(screen, (100, 100, 150), cheat_input_rect, 2, border_radius=8)
         display_text = cheat_input if cheat_input else "Enter cheat code..."
         text_color = WHITE if cheat_input else GRAY
-        draw_text(display_text, small_font, text_color, WIDTH - 150, 207)
+        draw_text(display_text, small_font, text_color, WIDTH - 150, 287)
         
-        # Cheat submit button
+        
         if cheat_submit_rect.collidepoint(mouse_pos):
             pygame.draw.rect(screen, BUTTON_GREEN_HOVER, cheat_submit_rect, border_radius=8)
         else:
             pygame.draw.rect(screen, BUTTON_GREEN, cheat_submit_rect, border_radius=8)
-        draw_text("SUBMIT", small_font, WHITE, WIDTH - 150, 252)
+        draw_text("SUBMIT", small_font, WHITE, WIDTH - 150, 332)
         
-        # Hint text for cheats
-        draw_text("Secret codes work here...", small_font, GRAY, WIDTH - 150, 290)
         
-        # Message display
+        draw_text("Secret codes work here...", small_font, GRAY, WIDTH - 150, 375)
+        
+        
         if message:
             if current_time - message_time < 3000:
-                draw_text(message, small_font, message_color, WIDTH - 150, 350)
+                draw_text(message, small_font, message_color, WIDTH - 150, 440)
             else:
                 message = ""
         
-        # Settings footer
-        draw_text("ESC to close", small_font, GRAY, WIDTH - 150, 430)
+        
+        draw_text("ESC to close", small_font, GRAY, WIDTH - 150, 535)
         
         pygame.display.flip()
         clock.tick(60)
 
-# HIGH SCORE SYSTEM
+
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -868,12 +869,13 @@ def save_highscores(scores):
 
 highscores = load_highscores()
 
-# XP & LEVEL SYSTEM
+
 
 DEFAULT_PLAYER_DATA = {
     "coins": 0,
     "xp": 0,
     "level": 1,
+    "challenge_mode": False,
     "total_games_played": 0,
     "total_score": 0,
     "completed_challenges": [],
@@ -895,6 +897,11 @@ DEFAULT_PLAYER_DATA = {
     },
     "cosmetics": {
         "theme": "DEFAULT",
+        "custom_theme": {
+            "background": [12, 14, 25],
+            "panel": [30, 33, 50],
+            "accent": [80, 120, 255]
+        },
         "snake_color": "GREEN",
         "paddle_color": "BLUE",
         "ball_color": "WHITE",
@@ -923,12 +930,22 @@ def load_player_data():
             data["xp"] = 0
         if "level" not in data:
             data["level"] = 1
+        if "challenge_mode" not in data:
+            data["challenge_mode"] = False
         if "total_games_played" not in data:
             data["total_games_played"] = 0
         if "total_score" not in data:
             data["total_score"] = 0
-        if "cosmetics" not in data:
-            data["cosmetics"] = DEFAULT_PLAYER_DATA["cosmetics"].copy()
+        saved_cosmetics = data.get("cosmetics", {})
+        cosmetics = DEFAULT_PLAYER_DATA["cosmetics"].copy()
+        if isinstance(saved_cosmetics, dict):
+            cosmetics.update(saved_cosmetics)
+        custom_theme = DEFAULT_PLAYER_DATA["cosmetics"]["custom_theme"].copy()
+        saved_custom_theme = cosmetics.get("custom_theme", {})
+        if isinstance(saved_custom_theme, dict):
+            custom_theme.update(saved_custom_theme)
+        cosmetics["custom_theme"] = custom_theme
+        data["cosmetics"] = cosmetics
         if "unlocked" not in data:
             data["unlocked"] = DEFAULT_PLAYER_DATA["unlocked"].copy()
         if "inventory" not in data:
@@ -956,13 +973,13 @@ def save_player_data(data):
 
 player_data = load_player_data()
 
-# DAILY BONUS SYSTEM
+
 
 DAILY_BONUS_FILE = os.path.join(DATA_DIR, "daily_bonus.json")
 
 
 def get_daily_bonus():
-    """Check if daily bonus is available and claim it"""
+    
     if "DAILY_BONUS" not in player_data["unlocked"]["features"]:
         return None, "Locked"
 
@@ -999,7 +1016,7 @@ def get_daily_bonus():
 
 
 def claim_daily_bonus():
-    """Claim the daily bonus"""
+    
     bonus, streak_or_time = get_daily_bonus()
 
     if bonus is None:
@@ -1021,10 +1038,10 @@ def claim_daily_bonus():
     return True, bonus, streak_or_time
 
 
-# XP REQUIREMENTS FOR LEVELS
+
 
 def get_xp_for_level(level):
-    """Calculate XP needed to reach a level"""
+    
     if level <= 1:
         return 0
     elif level == 2:
@@ -1040,7 +1057,7 @@ def get_xp_for_level(level):
 
 
 def get_total_xp_for_level(level):
-    """Total XP needed to reach a specific level"""
+    
     total = 0
     for i in range(2, level + 1):
         total += get_xp_for_level(i)
@@ -1048,7 +1065,7 @@ def get_total_xp_for_level(level):
 
 
 def get_level_from_xp(xp):
-    """Determine level based on XP"""
+    
     level = 1
     while True:
         next_level_xp = get_total_xp_for_level(level + 1)
@@ -1064,14 +1081,14 @@ def get_xp_required(level):
 
 
 def get_next_level_xp():
-    """Get XP needed for next level"""
+    
     current_level = player_data["level"]
     next_level_xp = get_total_xp_for_level(current_level + 1)
     return next_level_xp
 
 
 def get_xp_progress():
-    """Get progress to next level as percentage"""
+    
     current_level = player_data["level"]
     current_xp = player_data["xp"]
     current_level_xp = get_total_xp_for_level(current_level)
@@ -1085,7 +1102,7 @@ def get_xp_progress():
 
 
 def get_color_from_choice(choice):
-    """Get RGB color from cosmetic choice"""
+    
     COLOR_MAP = {
         "GREEN": (50, 200, 50),
         "BLUE": (60, 120, 220),
@@ -1101,7 +1118,7 @@ def get_color_from_choice(choice):
 
 
 def calculate_xp_reward(game_name, score):
-    """Calculate XP reward based on game and score"""
+    
     base_xp = {
         "SNAKE": 10,
         "TIC TAC TOE": 5,
@@ -1151,12 +1168,20 @@ def calculate_xp_reward(game_name, score):
 
     return base + bonus
 
-# XP & LEVEL FUNCTIONS
+
+
+def challenge_reward(amount):
+    
+    if player_data.get("challenge_mode", False):
+        return int(round(amount * 1.5))
+    return amount
+
 
 def add_xp(amount):
-    """Add XP to the player and check for level ups"""
+    
     global player_data
 
+    amount = challenge_reward(amount)
     player_data["xp"] += amount
     old_level = player_data["level"]
     new_level = get_level_from_xp(player_data["xp"])
@@ -1172,7 +1197,7 @@ def add_xp(amount):
 
 
 def check_level_unlocks(level):
-    """Check if any new features are unlocked at this level"""
+    
     global player_data
 
     UNLOCKABLE_FEATURES = {
@@ -1214,8 +1239,8 @@ def check_level_unlocks(level):
 def reward_game_played(game_name, coins=0, xp=0):
     global player_data
 
-    player_data["coins"] += coins
-    player_data["xp"] += xp
+    add_coins(coins)
+    add_xp(xp)
     player_data["total_games_played"] += 1
 
     save_player_data(player_data)
@@ -1225,7 +1250,7 @@ def reward_game_played(game_name, coins=0, xp=0):
 
 def add_coins(amount):
     global player_data
-    player_data["coins"] += amount
+    player_data["coins"] += challenge_reward(amount)
     save_player_data(player_data)
 
 
@@ -1274,7 +1299,7 @@ def update_low_score(game, score):
         return True
     return False
 
-# SHOP SYSTEM
+
 
 SHOP_ITEMS = {
     "SNAKE_FOOD": {
@@ -1361,7 +1386,53 @@ SHOP_ITEMS = {
         "price": 300,
         "level_required": 4
     },
+    "THEME_DARK": {
+        "name": "Dark Theme",
+        "description": "A calm dark palette for the arcade",
+        "price": 250,
+        "level_required": 1,
+        "type": "theme",
+        "theme_id": "DARK"
+    },
+    "THEME_OCEAN": {
+        "name": "Ocean Theme",
+        "description": "Deep blue backgrounds and bright aqua accents",
+        "price": 350,
+        "level_required": 1,
+        "type": "theme",
+        "theme_id": "OCEAN"
+    },
+    "THEME_RETRO": {
+        "name": "Retro Theme",
+        "description": "Warm vintage arcade colors",
+        "price": 350,
+        "level_required": 1,
+        "type": "theme",
+        "theme_id": "RETRO"
+    },
+    "THEME_NEON": {
+        "name": "Neon Theme",
+        "description": "Bright neon accents on a midnight background",
+        "price": 450,
+        "level_required": 1,
+        "type": "theme",
+        "theme_id": "NEON"
+    },
+    "CUSTOM_THEME_KIT": {
+        "name": "Custom Theme Builder",
+        "description": "Unlock the builder to create your own palette",
+        "price": 600,
+        "level_required": 1,
+        "type": "theme_builder",
+        "theme_id": "CUSTOM"
+    },
 }
+
+
+def is_shop_item_owned(item_id, item):
+    if item.get("type") in ("theme", "theme_builder"):
+        return item["theme_id"] in player_data["unlocked"]["themes"]
+    return player_data["inventory"].get(item_id, 0) > 0
 
 
 def shop_menu():
@@ -1372,10 +1443,11 @@ def shop_menu():
     message_time = 0
 
     while True:
-        screen.fill((15, 18, 30))
+        theme_style = get_theme_style()
+        screen.fill(theme_style["background"])
 
-        draw_text("SHOP", big_font, YELLOW, WIDTH // 2, 45)
-        draw_text(f"Coins: {get_coins()}", font, YELLOW, WIDTH // 2, 90)
+        draw_text("SHOP", big_font, theme_style["accent"], WIDTH // 2, 45)
+        draw_text(f"Coins: {get_coins()}", font, theme_style["accent"], WIDTH // 2, 90)
         draw_text(f"Level {player_data['level']}", small_font, WHITE, WIDTH // 2, 112)
 
         visible_items = shop_items[scroll:scroll + 5]
@@ -1386,27 +1458,36 @@ def shop_menu():
 
             rect = pygame.Rect(45, y, 510, 60)
 
-            can_buy = player_data["level"] >= item.get("level_required", 1)
+            owned = is_shop_item_owned(item_id, item)
+            can_buy = owned or player_data["level"] >= item.get("level_required", 1)
 
             if real_index == selected:
-                color = (45, 50, 75) if can_buy else (60, 40, 40)
-                border_color = YELLOW if can_buy else RED
+                color = theme_style["panel"]
+                border_color = theme_style["accent"] if can_buy else RED
                 pygame.draw.rect(screen, color, rect, border_radius=10)
                 pygame.draw.rect(screen, border_color, rect, 2, border_radius=10)
             else:
-                color = (30, 33, 50) if can_buy else (50, 30, 30)
+                color = theme_style["panel"] if can_buy else (50, 30, 30)
                 pygame.draw.rect(screen, color, rect, border_radius=10)
 
             draw_text(item["name"], font, WHITE if can_buy else GRAY, 155, y + 20)
 
-            if can_buy:
+            if item.get("type") in ("theme", "theme_builder") and owned:
+                status = "ACTIVE" if player_data["cosmetics"].get("theme") == item["theme_id"] else "OWNED"
+                draw_text(status, small_font, GREEN, 470, y + 20)
+                draw_text("Click / Enter to enable", small_font, GRAY, 175, y + 45)
+            elif can_buy:
                 draw_text(f"{item['price']} coins", small_font, YELLOW, 470, y + 20)
-                draw_text(f"Owned: {player_data['inventory'][item_id]}", small_font, GRAY, 155, y + 45)
+                if item.get("type") in ("theme", "theme_builder"):
+                    draw_text("Buy to unlock", small_font, GRAY, 155, y + 45)
+                else:
+                    draw_text(f"Owned: {player_data['inventory'].get(item_id, 0)}", small_font, GRAY, 155, y + 45)
             else:
                 draw_text(f"🔒 Level {item.get('level_required', 1)}", small_font, RED, 470, y + 20)
 
         current_id, current_item = shop_items[selected]
-        can_buy = player_data["level"] >= current_item.get("level_required", 1)
+        current_owned = is_shop_item_owned(current_id, current_item)
+        can_buy = current_owned or player_data["level"] >= current_item.get("level_required", 1)
 
         if can_buy:
             draw_text(current_item["description"], small_font, WHITE, WIDTH // 2, 500)
@@ -1446,29 +1527,34 @@ def shop_menu():
                     item_id = shop_items[selected][0]
                     item = SHOP_ITEMS[item_id]
 
-                    if player_data["level"] < item.get("level_required", 1):
+                    if not is_shop_item_owned(item_id, item) and player_data["level"] < item.get("level_required", 1):
                         message = f"NEED LEVEL {item.get('level_required', 1)}!"
                         message_time = pygame.time.get_ticks()
                     elif buy_item(item_id):
-                        message = "PURCHASED!"
+                        message = "THEME BUILDER READY!" if item.get("type") == "theme_builder" else "PURCHASED / THEME ENABLED!"
                         message_time = pygame.time.get_ticks()
+                        if item.get("type") == "theme_builder":
+                            custom_theme_builder()
                     else:
                         message = "NOT ENOUGH COINS!"
                         message_time = pygame.time.get_ticks()
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    for index, (item_id, item) in enumerate(shop_items):
+                    for index, (item_id, item) in enumerate(shop_items[scroll:scroll + 5]):
+                        real_index = scroll + index
                         y = 140 + index * 70
                         rect = pygame.Rect(45, y, 510, 60)
                         if rect.collidepoint(event.pos):
-                            selected = index
-                            if player_data["level"] < item.get("level_required", 1):
+                            selected = real_index
+                            if not is_shop_item_owned(item_id, item) and player_data["level"] < item.get("level_required", 1):
                                 message = f"NEED LEVEL {item.get('level_required', 1)}!"
                                 message_time = pygame.time.get_ticks()
                             elif buy_item(item_id):
-                                message = "PURCHASED!"
+                                message = "THEME BUILDER READY!" if item.get("type") == "theme_builder" else "PURCHASED / THEME ENABLED!"
                                 message_time = pygame.time.get_ticks()
+                                if item.get("type") == "theme_builder":
+                                    custom_theme_builder()
                             else:
                                 message = "NOT ENOUGH COINS!"
                                 message_time = pygame.time.get_ticks()
@@ -1482,14 +1568,30 @@ def buy_item(item_id):
 
     item = SHOP_ITEMS[item_id]
 
+    if item.get("type") in ("theme", "theme_builder"):
+        theme_id = item["theme_id"]
+        if theme_id not in player_data["unlocked"]["themes"]:
+            if not spend_coins(item["price"]):
+                return False
+            player_data["unlocked"]["themes"].append(theme_id)
+        player_data["cosmetics"]["theme"] = theme_id
+        save_player_data(player_data)
+        current_user = get_current_session()
+        if current_user:
+            save_current_account(current_user)
+        return True
+
     if not spend_coins(item["price"]):
         return False
 
     player_data["inventory"][item_id] += 1
     save_player_data(player_data)
+    current_user = get_current_session()
+    if current_user:
+        save_current_account(current_user)
     return True
 
-# MUSIC SYSTEM
+
 
 MUSIC_DIR = os.path.join(BASE_DIR, "Music")
 
@@ -1545,7 +1647,7 @@ def stop_music():
         pygame.mixer.music.stop()
     CURRENT_MUSIC_FILE = None
 
-# ACHIEVEMENT SYSTEM
+
 
 ACHIEVEMENT_FILE = os.path.join(DATA_DIR, "achievements.json")
 
@@ -1664,15 +1766,15 @@ def draw_achievement_notification():
 
 
 def check_achievements(breakout_level=0, pong_wins=0):
-    """Check and unlock achievements based on current progress"""
+    
     global highscores
 
-    # First game
+    
     total_played = player_data.get("total_games_played", 0)
     if total_played > 0:
         unlock_achievement("FIRST_GAME")
 
-    # Snake
+    
     if highscores["SNAKE"] >= 10:
         unlock_achievement("SNAKE_10")
     if highscores["SNAKE"] >= 25:
@@ -1687,29 +1789,29 @@ def check_achievements(breakout_level=0, pong_wins=0):
     if highscores.get("PAC-MAN", 0) >= 2000:
         unlock_achievement("PACMAN_2000")
 
-    # Tetris
+    
     if highscores["TETRIS"] >= 1000:
         unlock_achievement("TETRIS_1000")
     if highscores["TETRIS"] >= 10000:
         unlock_achievement("TETRIS_10000")
 
-    # Racing
+    
     if highscores["RACING"] >= 500:
         unlock_achievement("RACING_500")
     if highscores["RACING"] >= 2000:
         unlock_achievement("RACING_2000")
 
-    # Minesweeper
+    
     if highscores["MINESWEEPER"] >= 1:
         unlock_achievement("MINESWEEPER_1")
     if highscores["MINESWEEPER"] >= 10:
         unlock_achievement("MINESWEEPER_10")
 
-    # Tic Tac Toe
+    
     if highscores["TIC TAC TOE"] >= 5:
         unlock_achievement("TICTACTOE_5")
 
-    # Memory Cards
+    
     memory_score = highscores["MEMORY CARDS"]
     if memory_score > 0:
         if memory_score <= 30:
@@ -1717,7 +1819,7 @@ def check_achievements(breakout_level=0, pong_wins=0):
         if memory_score <= 20:
             unlock_achievement("MEMORY_20")
 
-    # Flappy Bird
+    
     if highscores["FLAPPY BIRD"] >= 10:
         unlock_achievement("FLAPPY_10")
     if highscores["FLAPPY BIRD"] >= 25:
@@ -1725,7 +1827,7 @@ def check_achievements(breakout_level=0, pong_wins=0):
     if highscores["FLAPPY BIRD"] >= 50:
         unlock_achievement("FLAPPY_50")
 
-    # Brick Breaker
+    
     if highscores["BRICK BREAKER"] >= 500:
         unlock_achievement("BREAKOUT_500")
     if highscores["BRICK BREAKER"] >= 2000:
@@ -1733,7 +1835,7 @@ def check_achievements(breakout_level=0, pong_wins=0):
     if breakout_level >= 5:
         unlock_achievement("BREAKOUT_LEVEL5")
 
-    # 2048
+    
     if highscores["2048"] >= 512:
         unlock_achievement("2048_512")
     if highscores["2048"] >= 1024:
@@ -1743,7 +1845,7 @@ def check_achievements(breakout_level=0, pong_wins=0):
     if highscores["2048"] >= 4096:
         unlock_achievement("2048_4096")
 
-    # Pong
+    
     if pong_wins >= 1:
         unlock_achievement("PONG_1")
     if pong_wins >= 5:
@@ -1751,7 +1853,7 @@ def check_achievements(breakout_level=0, pong_wins=0):
     if pong_wins >= 10:
         unlock_achievement("PONG_10")
 
-    # Wordle
+    
     wordle_wins = highscores.get("WORDLE_WINS", 0)
     if wordle_wins >= 1:
         unlock_achievement("WORDLE_1")
@@ -1760,7 +1862,7 @@ def check_achievements(breakout_level=0, pong_wins=0):
     if wordle_wins >= 10:
         unlock_achievement("WORDLE_10")
 
-# DAILY CHALLENGE SYSTEM
+
 
 CHALLENGE_TYPES = {
     "EASY": {
@@ -1793,9 +1895,9 @@ CHALLENGE_TYPES = {
     }
 }
 
-# Define all possible daily challenges
+
 DAILY_CHALLENGES = {
-    # SNAKE CHALLENGES
+    
     "SNAKE_SCORE_10": {
         "name": "Snake Beginner",
         "description": "Score 10 points in Snake",
@@ -1821,7 +1923,7 @@ DAILY_CHALLENGES = {
         "difficulty": "HARD"
     },
     
-    # TETRIS CHALLENGES
+    
     "TETRIS_SCORE_1000": {
         "name": "Tetris Player",
         "description": "Score 1,000 points in Tetris",
@@ -1847,7 +1949,7 @@ DAILY_CHALLENGES = {
         "difficulty": "HARD"
     },
     
-    # FLAPPY BIRD CHALLENGES
+    
     "FLAPPY_SCORE_10": {
         "name": "Flappy Novice",
         "description": "Score 10 in Flappy Bird",
@@ -1873,7 +1975,7 @@ DAILY_CHALLENGES = {
         "difficulty": "HARD"
     },
     
-    # RACING CHALLENGES
+    
     "RACING_SCORE_500": {
         "name": "Speed Racer",
         "description": "Score 500 in Racing",
@@ -1899,7 +2001,7 @@ DAILY_CHALLENGES = {
         "difficulty": "HARD"
     },
     
-    # MINESWEEPER CHALLENGES
+    
     "MINESWEEPER_WIN_1": {
         "name": "Mine Hunter",
         "description": "Win 1 Minesweeper game",
@@ -1925,7 +2027,7 @@ DAILY_CHALLENGES = {
         "difficulty": "HARD"
     },
     
-    # WORDLE CHALLENGES
+    
     "WORDLE_WIN_1": {
         "name": "Wordle Novice",
         "description": "Win 1 Wordle game",
@@ -1959,7 +2061,7 @@ DAILY_CHALLENGES = {
         "difficulty": "EXPERT"
     },
     
-    # PONG CHALLENGES
+    
     "PONG_WIN_1": {
         "name": "Pong Beginner",
         "description": "Win 1 Pong match",
@@ -1985,7 +2087,7 @@ DAILY_CHALLENGES = {
         "difficulty": "HARD"
     },
     
-    # BRICK BREAKER CHALLENGES
+    
     "BRICK_SCORE_500": {
         "name": "Brick Breaker Novice",
         "description": "Score 500 in Brick Breaker",
@@ -2011,7 +2113,7 @@ DAILY_CHALLENGES = {
         "difficulty": "HARD"
     },
     
-    # 2048 CHALLENGES
+    
     "2048_512": {
         "name": "2048 Starter",
         "description": "Reach 512 in 2048",
@@ -2045,7 +2147,7 @@ DAILY_CHALLENGES = {
         "difficulty": "EXPERT"
     },
     
-    # MEMORY CARDS CHALLENGES
+    
     "MEMORY_30": {
         "name": "Memory Novice",
         "description": "Finish Memory Cards in 30 moves",
@@ -2071,7 +2173,7 @@ DAILY_CHALLENGES = {
         "difficulty": "HARD"
     },
     
-    # TIC TAC TOE CHALLENGES
+    
     "TICTACTOE_WIN_3": {
         "name": "Tic Tac Toe Player",
         "description": "Win 3 Tic Tac Toe games",
@@ -2099,7 +2201,7 @@ DAILY_CHALLENGES = {
 }
 
 def get_daily_challenges():
-    """Get today's daily challenges"""
+    
     today = time.strftime("%Y-%m-%d")
     
     if os.path.exists(DAILY_CHALLENGE_FILE):
@@ -2111,7 +2213,7 @@ def get_daily_challenges():
         except:
             pass
     
-    # Generate new challenges for today
+    
     challenges = generate_daily_challenges()
     
     try:
@@ -2123,7 +2225,7 @@ def get_daily_challenges():
     return challenges
 
 def generate_daily_challenges():
-    """Generate a set of daily challenges (1 easy, 1 medium, 1 hard/expert)"""
+    
     challenges = []
     
     easy = []
@@ -2154,7 +2256,7 @@ def generate_daily_challenges():
     return challenges
 
 def check_challenge_progress(challenge_id, game_name, score):
-    """Check if a challenge is completed based on game progress"""
+    
     if challenge_id not in DAILY_CHALLENGES:
         return False
     
@@ -2177,7 +2279,7 @@ def check_challenge_progress(challenge_id, game_name, score):
     return False
 
 def complete_challenge(challenge_id):
-    """Mark a challenge as completed and give rewards"""
+    
     global player_data
     
     if challenge_id not in DAILY_CHALLENGES:
@@ -2200,21 +2302,20 @@ def complete_challenge(challenge_id):
         player_data["completed_challenges"].append(challenge_id)
         save_player_data(player_data)
     
-    current_user = get_current_session()
-    if current_user:
-        save_current_account(current_user)
-    
-    return True, f"Challenge Complete! +{coins_reward} coins, +{xp_reward} XP"
+    return True, (
+        f"Challenge Complete! +{challenge_reward(coins_reward)} coins, "
+        f"+{challenge_reward(xp_reward)} XP"
+    )
 
 def is_challenge_completed(challenge_id):
-    """Check if a challenge has been completed today"""
+    
     completed = player_data.get("completed_challenges", [])
     return challenge_id in completed
 
-# DAILY CHALLENGE MENU
+
 
 def daily_challenge_menu():
-    """Display and manage daily challenges"""
+    
     challenges = get_daily_challenges()
     back_button = pygame.Rect(190, 530, 220, 45)
     refresh_button = pygame.Rect(190, 480, 220, 40)
@@ -2225,7 +2326,7 @@ def daily_challenge_menu():
     
     while True:
         current_time = pygame.time.get_ticks()
-        screen.fill((15, 18, 30))
+        screen.fill(get_theme_style()["background"])
         
         draw_text("DAILY CHALLENGES", big_font, YELLOW, WIDTH // 2, 40)
         draw_text(f"Complete challenges for bonus rewards!", small_font, WHITE, WIDTH // 2, 80)
@@ -2258,8 +2359,8 @@ def daily_challenge_menu():
             draw_text(challenge["description"], small_font, WHITE, 170, y + 40)
             
             if not completed:
-                draw_text(f"+{difficulty_data['coins_reward']}🪙", small_font, YELLOW, 480, y + 15)
-                draw_text(f"+{difficulty_data['xp_reward']}⭐", small_font, GREEN, 480, y + 40)
+                draw_text(f"+{challenge_reward(difficulty_data['coins_reward'])}🪙", small_font, YELLOW, 480, y + 15)
+                draw_text(f"+{challenge_reward(difficulty_data['xp_reward'])}⭐", small_font, GREEN, 480, y + 40)
             else:
                 draw_text("COMPLETED!", small_font, GREEN, 480, y + 30)
             
@@ -2298,7 +2399,7 @@ def daily_challenge_menu():
         
         clock.tick(60)
 
-# LAUNCH GAME FUNCTION
+
 
 def launch_game(game):
     game_name = game[0]
@@ -2310,7 +2411,7 @@ def launch_game(game):
     reward = GAME_REWARDS.get(game_name, {"coins": 5, "xp": 5})
     reward_game_played(game_name, reward["coins"], reward["xp"])
     
-    # Check daily challenges
+    
     challenges = get_daily_challenges()
     for challenge_id in challenges:
         if not is_challenge_completed(challenge_id):
@@ -2326,7 +2427,7 @@ def launch_game(game):
     if current_user:
         save_current_account(current_user)
 
-# START MENU
+
 
 def start_menu():
     start_button = pygame.Rect(190, 140, 220, 50)
@@ -2343,7 +2444,7 @@ def start_menu():
     while True:
         current_time = pygame.time.get_ticks()
 
-        screen.fill(BLACK)
+        screen.fill(get_theme_style()["background"])
 
         draw_text("MINI GAMES", big_font, GREEN, WIDTH // 2, 90)
 
@@ -2367,6 +2468,8 @@ def start_menu():
             draw_text("Not logged in", small_font, RED, WIDTH // 2, 480)
 
         draw_text(f"Level {player_data['level']}", small_font, YELLOW, WIDTH // 2, 500)
+        if player_data.get("challenge_mode", False):
+            draw_text("CHALLENGE MODE: +50% REWARDS", small_font, RED, WIDTH // 2, 565)
 
         bar_width = 200
         bar_height = 10
@@ -2416,7 +2519,7 @@ def start_menu():
                             daily_message = "Already claimed today!"
                             daily_message_time = pygame.time.get_ticks()
 
-# ACHIEVEMENT MENU
+
 
 def achievement_menu():
     back_button = pygame.Rect(190, 480, 220, 45)
@@ -2487,43 +2590,105 @@ def achievement_menu():
         pygame.display.flip()
         clock.tick(60)
 
-# PROFILE MENU
+
+
+def custom_theme_builder():
+    if "CUSTOM" not in player_data["unlocked"]["themes"]:
+        return
+
+    slots = ("background", "panel", "accent")
+    palette = [
+        ("MIDNIGHT", (12, 14, 25)),
+        ("NAVY", (18, 35, 75)),
+        ("OCEAN", (10, 80, 105)),
+        ("FOREST", (20, 75, 45)),
+        ("PLUM", (65, 30, 85)),
+        ("CHARCOAL", (45, 48, 58)),
+        ("GOLD", (190, 125, 25)),
+        ("CORAL", (190, 65, 70)),
+        ("NEON", (20, 150, 115)),
+    ]
+    slot_buttons = [
+        (pygame.Rect(45 + index * 175, 140, 160, 42), slot)
+        for index, slot in enumerate(slots)
+    ]
+    color_buttons = [
+        (pygame.Rect(65 + (index % 3) * 160, 220 + (index // 3) * 60, 130, 45), name, color)
+        for index, (name, color) in enumerate(palette)
+    ]
+    back_button = pygame.Rect(200, 540, 200, 42)
+    selected_slot = "background"
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                quit_game()
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                return
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if back_button.collidepoint(event.pos):
+                    return
+                for rect, slot in slot_buttons:
+                    if rect.collidepoint(event.pos):
+                        selected_slot = slot
+                        break
+                for rect, _, color in color_buttons:
+                    if rect.collidepoint(event.pos):
+                        player_data["cosmetics"]["custom_theme"][selected_slot] = list(color)
+                        player_data["cosmetics"]["theme"] = "CUSTOM"
+                        save_player_data(player_data)
+                        current_user = get_current_session()
+                        if current_user:
+                            save_current_account(current_user)
+                        break
+
+        style = get_theme_style("CUSTOM")
+        screen.fill(style["background"])
+        draw_text("CUSTOM THEME BUILDER", big_font, WHITE, WIDTH // 2, 55)
+        draw_text("Choose a color slot, then pick a palette color.", small_font, LIGHT_GRAY, WIDTH // 2, 100)
+
+        for rect, slot in slot_buttons:
+            active = selected_slot == slot
+            pygame.draw.rect(screen, style["panel"], rect, border_radius=8)
+            pygame.draw.rect(screen, style["accent"] if active else GRAY, rect, 2, border_radius=8)
+            draw_text(slot.upper(), small_font, WHITE, rect.centerx, rect.centery)
+
+        for rect, name, color in color_buttons:
+            pygame.draw.rect(screen, color, rect, border_radius=8)
+            active = color == style[selected_slot]
+            pygame.draw.rect(screen, WHITE if active else DARK_GRAY, rect, 3 if active else 1, border_radius=8)
+            draw_text(name, small_font, WHITE, rect.centerx, rect.centery)
+
+        preview_rect = pygame.Rect(100, 425, 400, 75)
+        pygame.draw.rect(screen, style["panel"], preview_rect, border_radius=12)
+        pygame.draw.rect(screen, style["accent"], preview_rect, 3, border_radius=12)
+        draw_text("PREVIEW", font, style["accent"], preview_rect.centerx, preview_rect.centery)
+        draw_button(back_button, "DONE", BUTTON_GRAY, BUTTON_GRAY_HOVER)
+        pygame.display.flip()
+        clock.tick(60)
+
 
 def profile_menu():
-    back_button = pygame.Rect(190, 480, 220, 45)
+    back_button = pygame.Rect(200, 545, 200, 42)
+    builder_button = pygame.Rect(320, 495, 240, 38)
 
-    theme_buttons = []
-    color_buttons = []
-
-    themes = ["DEFAULT", "DARK", "NEON", "RETRO", "OCEAN"]
-    theme_colors = {
-        "DEFAULT": (50, 50, 80),
-        "DARK": (20, 20, 30),
-        "NEON": (0, 50, 30),
-        "RETRO": (50, 30, 20),
-        "OCEAN": (10, 30, 60)
-    }
-
-    for i, theme in enumerate(themes):
-        x = 50 + i * 110
-        y = 200
-        rect = pygame.Rect(x, y, 90, 90)
-        theme_buttons.append((rect, theme))
+    themes = ["DEFAULT", "DARK", "NEON", "RETRO", "OCEAN", "CUSTOM"]
+    theme_buttons = [
+        (pygame.Rect(300 + (index % 3) * 92, 200 + (index // 3) * 58, 84, 48), theme)
+        for index, theme in enumerate(themes)
+    ]
 
     colors = ["GREEN", "BLUE", "WHITE", "YELLOW", "GOLD", "PURPLE", "PINK", "RED", "ORANGE"]
-    for i, color in enumerate(colors):
-        x = 50 + (i % 5) * 110
-        y = 340 + (i // 5) * 70
-        rect = pygame.Rect(x, y, 40, 40)
-        color_buttons.append((rect, color))
-
+    color_buttons = [
+        (pygame.Rect(320 + (index % 3) * 72, 365 + (index // 3) * 40, 32, 30), color)
+        for index, color in enumerate(colors)
+    ]
     stat_scroll = 0
 
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 quit_game()
-
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     return
@@ -2531,43 +2696,35 @@ def profile_menu():
                     stat_scroll -= 50
                 if event.key == pygame.K_DOWN:
                     stat_scroll += 50
-
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:
-                    if back_button.collidepoint(event.pos):
-                        return
-
-                    for rect, theme in theme_buttons:
-                        if rect.collidepoint(event.pos):
-                            if theme in player_data["unlocked"]["themes"]:
-                                player_data["cosmetics"]["theme"] = theme
-                                save_player_data(player_data)
-
-                    for rect, color in color_buttons:
-                        if rect.collidepoint(event.pos):
-                            if color in player_data["unlocked"]["colors"]:
-                                player_data["cosmetics"]["snake_color"] = color
-                                player_data["cosmetics"]["paddle_color"] = color
-                                player_data["cosmetics"]["ball_color"] = color
-                                player_data["cosmetics"]["player_color"] = color
-                                player_data["cosmetics"]["car_color"] = color
-                                player_data["cosmetics"]["bird_color"] = color
-                                save_player_data(player_data)
-
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if back_button.collidepoint(event.pos):
+                    return
+                if builder_button.collidepoint(event.pos) and "CUSTOM" in player_data["unlocked"]["themes"]:
+                    custom_theme_builder()
+                for rect, theme in theme_buttons:
+                    if rect.collidepoint(event.pos) and theme in player_data["unlocked"]["themes"]:
+                        player_data["cosmetics"]["theme"] = theme
+                        save_player_data(player_data)
+                        current_user = get_current_session()
+                        if current_user:
+                            save_current_account(current_user)
+                for rect, color in color_buttons:
+                    if rect.collidepoint(event.pos) and color in player_data["unlocked"]["colors"]:
+                        for cosmetic in ("snake_color", "paddle_color", "ball_color",
+                                         "player_color", "car_color", "bird_color"):
+                            player_data["cosmetics"][cosmetic] = color
+                        save_player_data(player_data)
             if event.type == pygame.MOUSEWHEEL:
                 stat_scroll -= event.y * 30
 
-        theme = player_data["cosmetics"]["theme"]
-        bg_color = theme_colors.get(theme, (20, 20, 40))
-
-        screen.fill(bg_color)
+        style = get_theme_style()
+        screen.fill(style["background"])
 
         current_user = get_current_session()
-        if current_user:
-            draw_text(f"Account: {current_user}", small_font, GREEN, WIDTH // 2, 15)
-        else:
-            draw_text("No account logged in", small_font, RED, WIDTH // 2, 15)
-
+        draw_text(
+            f"Account: {current_user}" if current_user else "No account logged in",
+            small_font, GREEN if current_user else RED, WIDTH // 2, 15,
+        )
         draw_text("PROFILE", big_font, WHITE, WIDTH // 2, 50)
         draw_text(f"Level {player_data['level']}", font, YELLOW, WIDTH // 2, 90)
 
@@ -2575,17 +2732,17 @@ def profile_menu():
         bar_height = 20
         bar_x = WIDTH // 2 - bar_width // 2
         bar_y = 115
-
-        pygame.draw.rect(screen, DARK_GRAY, (bar_x, bar_y, bar_width, bar_height), border_radius=10)
+        pygame.draw.rect(screen, style["panel"], (bar_x, bar_y, bar_width, bar_height), border_radius=10)
         progress = get_xp_progress()
         fill_width = int(bar_width * progress / 100)
         if fill_width > 0:
-            pygame.draw.rect(screen, GREEN, (bar_x, bar_y, fill_width, bar_height), border_radius=10)
-
-        draw_text(f"{player_data['xp']} / {get_next_level_xp()} XP", small_font, WHITE, WIDTH // 2, bar_y + bar_height + 18)
+            pygame.draw.rect(screen, style["accent"], (bar_x, bar_y, fill_width, bar_height), border_radius=10)
+        draw_text(
+            f"{player_data['xp']} / {get_next_level_xp()} XP",
+            small_font, WHITE, WIDTH // 2, bar_y + bar_height + 18,
+        )
 
         draw_text("STATISTICS", font, WHITE, 100, 170)
-        stat_start_y = 200 + stat_scroll
         stats = [
             f"Games Played: {player_data['total_games_played']}",
             f"Total Score: {player_data['total_score']}",
@@ -2593,50 +2750,48 @@ def profile_menu():
             f"Level: {player_data['level']}",
             f"XP: {player_data['xp']}",
         ]
-
-        for i, stat in enumerate(stats):
-            y = stat_start_y + i * 25
+        for index, stat in enumerate(stats):
+            y = 200 + stat_scroll + index * 25
             if 170 < y < 470:
                 draw_text(stat, small_font, WHITE, 100, y)
 
-        draw_text("THEMES", font, WHITE, 300, 170)
+        draw_text("THEMES", font, WHITE, 430, 175)
         for rect, theme in theme_buttons:
-            is_unlocked = theme in player_data["unlocked"]["themes"]
-            is_active = player_data["cosmetics"]["theme"] == theme
+            unlocked = theme in player_data["unlocked"]["themes"]
+            active = player_data["cosmetics"].get("theme") == theme
+            theme_color = get_theme_style(theme)["panel"] if unlocked else style["panel"]
+            pygame.draw.rect(screen, theme_color, rect, border_radius=8)
+            pygame.draw.rect(
+                screen,
+                style["accent"] if active else (GRAY if unlocked else DARK_GRAY),
+                rect, 3 if active else 1, border_radius=8,
+            )
+            draw_text(theme if unlocked else "LOCKED", small_font, WHITE if unlocked else GRAY,
+                      rect.centerx, rect.centery)
 
-            if is_unlocked:
-                color = theme_colors.get(theme, (50, 50, 80))
-                pygame.draw.rect(screen, color, rect, border_radius=10)
-                if is_active:
-                    pygame.draw.rect(screen, YELLOW, rect, 3, border_radius=10)
-                draw_text(theme[0], font, WHITE, rect.centerx, rect.centery)
-            else:
-                pygame.draw.rect(screen, DARK_GRAY, rect, border_radius=10)
-                draw_text("🔒", font, GRAY, rect.centerx, rect.centery)
-
-        draw_text("COLORS", font, WHITE, 300, 320)
+        draw_text("PLAYER COLORS", font, WHITE, 430, 345)
         for rect, color in color_buttons:
-            is_unlocked = color in player_data["unlocked"]["colors"]
-            is_active = player_data["cosmetics"]["snake_color"] == color
+            unlocked = color in player_data["unlocked"]["colors"]
+            active = player_data["cosmetics"].get("snake_color") == color
+            pygame.draw.rect(screen, get_color_from_choice(color) if unlocked else style["panel"], rect, border_radius=6)
+            if active:
+                pygame.draw.rect(screen, style["accent"], rect, 3, border_radius=6)
+            elif not unlocked:
+                draw_text("x", small_font, GRAY, rect.centerx, rect.centery)
 
-            if is_unlocked:
-                rgb = get_color_from_choice(color)
-                pygame.draw.rect(screen, rgb, rect, border_radius=10)
-                if is_active:
-                    pygame.draw.rect(screen, YELLOW, rect, 3, border_radius=10)
-            else:
-                pygame.draw.rect(screen, DARK_GRAY, rect, border_radius=10)
-                draw_text("🔒", small_font, GRAY, rect.centerx, rect.centery)
-
+        if "CUSTOM" in player_data["unlocked"]["themes"]:
+            draw_button(builder_button, "CUSTOMIZE THEME", BUTTON_PURPLE, BUTTON_PURPLE_HOVER)
+        else:
+            pygame.draw.rect(screen, style["panel"], builder_button, border_radius=10)
+            draw_text("BUY BUILDER IN SHOP", small_font, GRAY, builder_button.centerx, builder_button.centery)
         draw_button(back_button, "BACK", BUTTON_GRAY, BUTTON_GRAY_HOVER)
-
         pygame.display.flip()
         clock.tick(60)
 
-# ACCOUNT MENU
+
 
 def account_menu():
-    """Main account management menu"""
+    
     current_user = get_current_session()
     
     if current_user:
@@ -2794,7 +2949,7 @@ def account_menu():
                         return
 
 def create_account_menu():
-    """Menu for creating a new account"""
+    
     username = ""
     message = ""
     message_color = WHITE
@@ -2884,7 +3039,7 @@ def create_account_menu():
                     if back_btn.collidepoint(event.pos):
                         return
 
-# GAME SELECTOR
+
 
 def game_select_menu():
     games = [
@@ -2910,7 +3065,7 @@ def game_select_menu():
 
     play_button = pygame.Rect(WIDTH // 2 - 110, 420, 220, 60)
     achievement_button = pygame.Rect(WIDTH // 2 - 110, 475, 220, 45)
-    settings_button = pygame.Rect(WIDTH - 45, 15, 30, 30)  # Small settings button
+    settings_button = pygame.Rect(WIDTH - 45, 15, 30, 30)  
 
     play_menu_music()
     while True:
@@ -2944,23 +3099,16 @@ def game_select_menu():
                     elif settings_button.collidepoint(event.pos):
                         settings_menu()
 
-        theme = player_data["cosmetics"]["theme"]
-        if theme == "DARK":
-            screen.fill((10, 10, 20))
-        elif theme == "NEON":
-            screen.fill((20, 10, 30))
-        elif theme == "RETRO":
-            screen.fill((30, 20, 10))
-        elif theme == "OCEAN":
-            screen.fill((10, 20, 40))
-        else:
-            screen.fill((12, 14, 25))
+        theme_style = get_theme_style()
+        screen.fill(theme_style["background"])
 
         draw_text("GAME SELECT", big_font, WHITE, WIDTH // 2, 50)
         draw_text(f"{selected + 1} / {len(games)}", font, GRAY, WIDTH // 2, 100)
         draw_text(f"Level {player_data['level']}", small_font, YELLOW, WIDTH // 2, 125)
+        if player_data.get("challenge_mode", False):
+            draw_text("CHALLENGE MODE", small_font, RED, WIDTH // 2, 150)
 
-        # Settings button (gear icon)
+        
         mouse_pos = pygame.mouse.get_pos()
         if settings_button.collidepoint(mouse_pos):
             pygame.draw.rect(screen, (60, 70, 120), settings_button, border_radius=8)
@@ -3064,7 +3212,7 @@ def game_select_menu():
         pygame.display.flip()
         clock.tick(60)
 
-# SNAKE GAME
+
 
 def create_food(snake):
     while True:
@@ -3217,7 +3365,7 @@ def snake_game():
         draw_text("ESC = Menu", small_font, GRAY, 530, 20)
 
         pygame.display.flip()
-        clock.tick(10)
+        clock.tick(13 if player_data.get("challenge_mode", False) else 10)
 
     new_record = update_highscore("SNAKE", score)
     check_achievements()
@@ -3256,8 +3404,8 @@ def snake_game_over(score, new_record=False):
         draw_text(f"Score: {score}", font, WHITE, WIDTH // 2, 120)
         draw_text(f"Best: {highscores['SNAKE']}", font, YELLOW, WIDTH // 2, 155)
 
-        draw_text(f"+{xp_earned} XP", font, GREEN, WIDTH // 2 - 80, 190)
-        draw_text(f"+{coins_earned} Coins", font, YELLOW, WIDTH // 2 + 80, 190)
+        draw_text(f"+{challenge_reward(xp_earned)} XP", font, GREEN, WIDTH // 2 - 80, 190)
+        draw_text(f"+{challenge_reward(coins_earned)} Coins", font, YELLOW, WIDTH // 2 + 80, 190)
 
         if level_up_text:
             draw_text(level_up_text, font, YELLOW, WIDTH // 2, 220)
@@ -3299,17 +3447,22 @@ def snake_game_over(score, new_record=False):
                     if menu_button.collidepoint(event.pos):
                         return
 
-# TIC TAC TOE
+
 
 def tic_tac_toe():
     play_music("TIC TAC TOE")
 
+    challenge_enabled = player_data.get("challenge_mode", False)
     has_bigger_board = player_data["inventory"].get("TICTACTOE_BOARD", 0) > 0
     use_bigger_board = False
     board_size = 3
     win_count = 3
 
-    if has_bigger_board:
+    if challenge_enabled:
+        board_size = 4
+        win_count = 4
+
+    if has_bigger_board and not challenge_enabled:
         if use_powerup("TICTACTOE_BOARD"):
             board_size = 4
             win_count = 4
@@ -3370,6 +3523,8 @@ def tic_tac_toe():
 
         if use_bigger_board:
             draw_text("★ BIGGER BOARD ACTIVE", small_font, YELLOW, WIDTH // 2, 55)
+        elif challenge_enabled:
+            draw_text("CHALLENGE MODE: 4x4 BOARD", small_font, YELLOW, WIDTH // 2, 55)
 
         for row in range(board_size):
             for col in range(board_size):
@@ -3403,14 +3558,14 @@ def tic_tac_toe():
 
         clock.tick(60)
 
-# MINESWEEPER
+
 
 def minesweeper():
     play_music("MINESWEEPER")
 
     ROWS = 10
     COLS = 10
-    MINES = 15
+    MINES = 20 if player_data.get("challenge_mode", False) else 15
     CELL = 35
 
     has_scanner = player_data["inventory"].get("MINESWEEPER_SCAN", 0) > 0
@@ -3633,7 +3788,7 @@ def minesweeper():
         pygame.display.flip()
         clock.tick(60)
 
-# MEMORY CARDS
+
 
 def memory_game():
     play_music("MEMORY CARDS")
@@ -3678,7 +3833,8 @@ def memory_game():
         current_time = pygame.time.get_ticks()
 
         if waiting:
-            if current_time - waiting_start >= 800:
+            match_reveal_time = 500 if player_data.get("challenge_mode", False) else 800
+            if current_time - waiting_start >= match_reveal_time:
                 if cards[first_card] == cards[second_card]:
                     matched[first_card] = True
                     matched[second_card] = True
@@ -3757,7 +3913,7 @@ def memory_game():
         pygame.display.flip()
         clock.tick(60)
 
-# TETRIS
+
 
 def tetris_game():
     play_music("TETRIS")
@@ -3831,7 +3987,7 @@ def tetris_game():
     score = 0
     lines = 0
     level = 1
-    fall_speed = 500
+    fall_speed = 375 if player_data.get("challenge_mode", False) else 500
     running = True
 
     while running:
@@ -3888,7 +4044,8 @@ def tetris_game():
                             elif cleared == 4:
                                 score += 800
                             level = max(1, lines // 10 + 1)
-                            fall_speed = max(80, 500 - (level - 1) * 40)
+                            base_fall_speed = 500 - (level - 1) * 40
+                            fall_speed = max(60, int(base_fall_speed * 0.75)) if player_data.get("challenge_mode", False) else max(80, base_fall_speed)
                             current_piece = new_piece()
                             fall_timer = 0
                             if not valid_position(current_piece):
@@ -3948,7 +4105,8 @@ def tetris_game():
                 elif cleared == 4:
                     score += 800
                 level = max(1, lines // 10 + 1)
-                fall_speed = max(80, 500 - (level - 1) * 40)
+                base_fall_speed = 500 - (level - 1) * 40
+                fall_speed = max(60, int(base_fall_speed * 0.75)) if player_data.get("challenge_mode", False) else max(80, base_fall_speed)
                 current_piece = new_piece()
                 fall_timer = 0
                 if not valid_position(current_piece):
@@ -4038,7 +4196,7 @@ def tetris_game_over(score, new_record=False):
                     if menu_button.collidepoint(event.pos):
                         return
 
-# RACING GAME
+
 
 def racing_game():
     play_music("RACING")
@@ -4101,16 +4259,16 @@ def racing_game():
             player_x = max(ROAD_LEFT, min(ROAD_RIGHT - PLAYER_WIDTH, player_x))
 
             score += 1
-            speed = 5 + score // 500
+            speed = (7 + score // 500) if player_data.get("challenge_mode", False) else (5 + score // 500)
             road_offset += speed
             if road_offset >= 80:
                 road_offset = 0
 
             spawn_timer += dt
-            spawn_delay = max(350, 900 - score // 10)
+            spawn_delay = max(250, 700 - score // 10) if player_data.get("challenge_mode", False) else max(350, 900 - score // 10)
             if spawn_timer >= spawn_delay:
                 spawn_timer = 0
-                if len(enemies) < 5:
+                if len(enemies) < (6 if player_data.get("challenge_mode", False) else 5):
                     create_enemy()
 
             for enemy in enemies:
@@ -4175,7 +4333,7 @@ def racing_game():
         pygame.display.flip()
         clock.tick(60)
 
-# FLAPPY BIRD
+
 
 def flappy_bird():
     play_music("FLAPPY BIRD")
@@ -4192,10 +4350,13 @@ def flappy_bird():
     GRAVITY = 0.45
     JUMP_STRENGTH = -8
 
-    PIPE_GAP = 185 if wide_gap_active else 155
+    if player_data.get("challenge_mode", False):
+        PIPE_GAP = 160 if wide_gap_active else 125
+    else:
+        PIPE_GAP = 185 if wide_gap_active else 155
     PIPE_WIDTH = 70
     GROUND_Y = 470
-    pipe_speed = 4
+    pipe_speed = 5 if player_data.get("challenge_mode", False) else 4
 
     bird_y = HEIGHT // 2
     bird_velocity = 0
@@ -4274,7 +4435,12 @@ def flappy_bird():
             pipes[:] = [pipe for pipe in pipes if pipe["x"] > -PIPE_WIDTH]
 
             pipe_speed = 4 + score // 10
-            spawn_delay = max(1100, 1500 - score * 10)
+            if player_data.get("challenge_mode", False):
+                pipe_speed = 5 + score // 10
+                spawn_delay = max(850, 1300 - score * 10)
+            else:
+                pipe_speed = 4 + score // 10
+                spawn_delay = max(1100, 1500 - score * 10)
 
             if check_collision():
                 game_over = True
@@ -4324,7 +4490,7 @@ def flappy_bird():
         pygame.display.flip()
         clock.tick(60)
 
-# BRICK BREAKER
+
 def brick_breaker():
     play_music("BRICK BREAKER")
 
@@ -4356,7 +4522,8 @@ def brick_breaker():
         def get_rect(self):
             return pygame.Rect(int(self.x), int(self.y), BALL_SIZE, BALL_SIZE)
 
-    balls = [Ball(WIDTH // 2 - BALL_SIZE // 2, paddle_y - BALL_SIZE - 2, 4, -4)]
+    initial_ball_speed = 5 if player_data.get("challenge_mode", False) else 4
+    balls = [Ball(WIDTH // 2 - BALL_SIZE // 2, paddle_y - BALL_SIZE - 2, initial_ball_speed, -initial_ball_speed)]
     ball_launched = False
 
     brick_colors = [RED, ORANGE, YELLOW, GREEN, BLUE, PURPLE]
@@ -4373,7 +4540,7 @@ def brick_breaker():
             })
 
     score = 0
-    lives = 3
+    lives = 2 if player_data.get("challenge_mode", False) else 3
     level = 1
     game_over = False
     won = False
@@ -4382,7 +4549,12 @@ def brick_breaker():
     def reset_ball():
         nonlocal ball_launched
         balls.clear()
-        balls.append(Ball(paddle_x + PADDLE_WIDTH // 2 - BALL_SIZE // 2, paddle_y - BALL_SIZE - 2, 4, -4))
+        balls.append(Ball(
+            paddle_x + PADDLE_WIDTH // 2 - BALL_SIZE // 2,
+            paddle_y - BALL_SIZE - 2,
+            initial_ball_speed,
+            -initial_ball_speed,
+        ))
         ball_launched = False
 
     def create_level():
@@ -4429,8 +4601,8 @@ def brick_breaker():
                         if not ball_launched:
                             ball_launched = True
                             for ball in balls:
-                                ball.dx = random.choice([-4, 4]) if level > 1 else 4
-                                ball.dy = -4
+                                ball.dx = random.choice([-initial_ball_speed, initial_ball_speed]) if level > 1 else initial_ball_speed
+                                ball.dy = -initial_ball_speed
                 if event.key == pygame.K_m and has_multi_ball and not multi_ball_used:
                     activate_multi_ball()
                 if game_over and event.key == pygame.K_r:
@@ -4576,7 +4748,7 @@ def brick_breaker():
         pygame.display.flip()
         clock.tick(60)
 
-# 2048 GAME
+
 
 def game_2048():
     play_music("2048")
@@ -4614,7 +4786,8 @@ def game_2048():
         if not cells:
             return
         row, col = random.choice(cells)
-        board[row][col] = 2 if random.random() < 0.9 else 4
+        four_tile_chance = 0.2 if player_data.get("challenge_mode", False) else 0.1
+        board[row][col] = 2 if random.random() >= four_tile_chance else 4
 
     def compress_line(line):
         values = [value for value in line if value != 0]
@@ -4816,9 +4989,9 @@ def game_2048():
         pygame.display.flip()
         clock.tick(60)
 
-# PONG
 
-# Global variable for pong wins tracking
+
+
 pong_wins = 0
 
 def pong_game():
@@ -4837,11 +5010,11 @@ def pong_game():
 
     BALL_SIZE = 16
     PLAYER_SPEED = 7
-    CPU_SPEED = 5
+    CPU_SPEED = 7 if player_data.get("challenge_mode", False) else 5
     
-    # Match settings - 4 matches total (best of 4)
+    
     TOTAL_MATCHES = 4
-    WIN_SCORE = 10  # Points to win a single match
+    WIN_SCORE = 12 if player_data.get("challenge_mode", False) else 10
 
     player_y = HEIGHT // 2 - PADDLE_HEIGHT // 2
     cpu_y = HEIGHT // 2 - PADDLE_HEIGHT // 2
@@ -4850,9 +5023,9 @@ def pong_game():
     ball_dx = 6
     ball_dy = 4
     
-    # Track scores
-    player_score = 0  # Current match score
-    cpu_score = 0     # Current match score
+    
+    player_score = 0  
+    cpu_score = 0     
     player_matches_won = 0
     cpu_matches_won = 0
     current_match = 1
@@ -4861,18 +5034,20 @@ def pong_game():
     
     game_over = False
     new_record = False
-    final_result = None  # "WIN", "LOSE", "DRAW"
+    final_result = None  
 
     def reset_ball(direction):
         nonlocal ball_x, ball_y, ball_dx, ball_dy
         ball_x = WIDTH // 2
         ball_y = HEIGHT // 2
-        ball_dx = 6 * direction
-        ball_dy = random.choice([-4, -3, 3, 4])
+        ball_speed = 7 if player_data.get("challenge_mode", False) else 6
+        vertical_speed = 5 if player_data.get("challenge_mode", False) else 4
+        ball_dx = ball_speed * direction
+        ball_dy = random.choice([-vertical_speed, -3, 3, vertical_speed])
 
     def reset_match():
-        # Only reset the current match scores and paddle positions
-        # Do NOT reset matches_won or current_match
+        
+        
         nonlocal player_y, cpu_y, player_score, cpu_score, match_in_progress, match_ended
         player_y = HEIGHT // 2 - PADDLE_HEIGHT // 2
         cpu_y = HEIGHT // 2 - PADDLE_HEIGHT // 2
@@ -4883,7 +5058,7 @@ def pong_game():
         reset_ball(random.choice([-1, 1]))
 
     def reset_full_game():
-        # Reset everything for a complete restart
+        
         nonlocal player_y, cpu_y, player_score, cpu_score, player_matches_won, cpu_matches_won
         nonlocal current_match, match_in_progress, match_ended, game_over, final_result, new_record
         player_y = HEIGHT // 2 - PADDLE_HEIGHT // 2
@@ -4900,7 +5075,7 @@ def pong_game():
         new_record = False
         reset_ball(1)
 
-    # Start first match
+    
     reset_ball(1)
 
     running = True
@@ -4913,20 +5088,20 @@ def pong_game():
                     stop_music()
                     return
                 if event.key == pygame.K_r and game_over:
-                    # Restart the entire game
+                    
                     reset_full_game()
                     continue
-                # Press SPACE to continue to next match
+                
                 if event.key == pygame.K_SPACE and match_ended and not game_over:
                     current_match += 1
                     if current_match > TOTAL_MATCHES:
-                        # All matches played, determine winner
+                        
                         game_over = True
-                        # Calculate final score for highscore
+                        
                         final_score = player_matches_won * 1000 + cpu_matches_won * 100 + current_match
                         new_record = update_highscore("PONG", final_score)
                         
-                        # Determine final result
+                        
                         if player_matches_won > cpu_matches_won:
                             final_result = "WIN"
                             pong_wins += 1
@@ -4942,14 +5117,14 @@ def pong_game():
         keys = pygame.key.get_pressed()
 
         if not game_over and match_in_progress and not match_ended:
-            # Player movement
+            
             if keys[pygame.K_UP] or keys[pygame.K_w]:
                 player_y -= PLAYER_SPEED
             if keys[pygame.K_DOWN] or keys[pygame.K_s]:
                 player_y += PLAYER_SPEED
             player_y = max(0, min(HEIGHT - PADDLE_HEIGHT, player_y))
 
-            # CPU movement
+            
             cpu_center = cpu_y + PADDLE_HEIGHT // 2
             if ball_y > cpu_center + 10:
                 cpu_y += CPU_SPEED
@@ -4957,15 +5132,15 @@ def pong_game():
                 cpu_y -= CPU_SPEED
             cpu_y = max(0, min(HEIGHT - PADDLE_HEIGHT, cpu_y))
 
-            # Ball movement
+            
             ball_x += ball_dx
             ball_y += ball_dy
 
-            # Wall bouncing
+            
             if ball_y <= 0 or ball_y >= HEIGHT - BALL_SIZE:
                 ball_dy *= -1
 
-            # Collision with paddles
+            
             player_rect = pygame.Rect(30, int(player_y), PADDLE_WIDTH, PADDLE_HEIGHT)
             cpu_rect = pygame.Rect(WIDTH - 45, int(cpu_y), PADDLE_WIDTH, PADDLE_HEIGHT)
             ball_rect = pygame.Rect(int(ball_x), int(ball_y), BALL_SIZE, BALL_SIZE)
@@ -4976,7 +5151,7 @@ def pong_game():
                 paddle_center = player_y + PADDLE_HEIGHT / 2
                 difference = ball_y + BALL_SIZE / 2 - paddle_center
                 ball_dy = difference * 0.12
-                # Speed up ball slightly
+                
                 if abs(ball_dx) < 8:
                     ball_dx *= 1.05
 
@@ -4989,11 +5164,11 @@ def pong_game():
                 if abs(ball_dx) < 8:
                     ball_dx *= 1.05
 
-            # Scoring
+            
             if ball_x > WIDTH:
                 player_score += 1
                 if player_score >= WIN_SCORE:
-                    # Player won this match
+                    
                     player_matches_won += 1
                     match_ended = True
                     match_in_progress = False
@@ -5002,38 +5177,38 @@ def pong_game():
             elif ball_x < -BALL_SIZE:
                 cpu_score += 1
                 if cpu_score >= WIN_SCORE:
-                    # CPU won this match
+                    
                     cpu_matches_won += 1
                     match_ended = True
                     match_in_progress = False
                 else:
                     reset_ball(1)
 
-        # Draw everything
+        
         screen.fill((10, 12, 25))
         draw_text("PONG", big_font, WHITE, WIDTH // 2, 25)
 
-        # Match info
+        
         draw_text(f"Match {current_match}/{TOTAL_MATCHES}", small_font, WHITE, WIDTH // 2, 55)
         draw_text(f"Player: {player_matches_won} | CPU: {cpu_matches_won}", small_font, YELLOW, WIDTH // 2, 75)
 
         if big_paddle_active:
             draw_text("✦ BIG PADDLE ACTIVE", small_font, YELLOW, WIDTH // 2, 90)
 
-        # Current match score
+        
         draw_text(str(player_score), big_font, GREEN, WIDTH // 2 - 100, 115)
         draw_text(str(cpu_score), big_font, RED, WIDTH // 2 + 100, 115)
 
-        # Center line
+        
         for y in range(150, HEIGHT, 30):
             pygame.draw.rect(screen, GRAY, (WIDTH // 2 - 2, y, 4, 15))
 
-        # Draw paddles
+        
         pygame.draw.rect(screen, GREEN, (30, int(player_y), PADDLE_WIDTH, PADDLE_HEIGHT), border_radius=5)
         pygame.draw.rect(screen, RED, (WIDTH - 45, int(cpu_y), PADDLE_WIDTH, PADDLE_HEIGHT), border_radius=5)
         pygame.draw.rect(screen, WHITE, (int(ball_x), int(ball_y), BALL_SIZE, BALL_SIZE), border_radius=4)
 
-        # Match ended - show result of this match
+        
         if match_ended and not game_over:
             overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 180))
@@ -5054,7 +5229,7 @@ def pong_game():
             
             draw_text("ESC = Menu", small_font, GRAY, WIDTH // 2, 410)
 
-        # Game over - final result
+        
         if game_over:
             overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 200))
@@ -5062,7 +5237,7 @@ def pong_game():
             
             draw_text("GAME OVER", big_font, YELLOW, WIDTH // 2, 160)
             
-            # Show final result
+            
             if final_result == "WIN":
                 draw_text("🏆 YOU WIN THE SERIES! 🏆", big_font, GREEN, WIDTH // 2, 220)
             elif final_result == "LOSE":
@@ -5078,14 +5253,14 @@ def pong_game():
             draw_text("Press R to play again", font, GREEN, WIDTH // 2, 390)
             draw_text("ESC = Menu", small_font, GRAY, WIDTH // 2, 420)
 
-        # Controls hint during gameplay
+        
         if not game_over and not match_ended:
             draw_text("W / S or UP / DOWN = MOVE", small_font, GRAY, WIDTH // 2, HEIGHT - 25)
 
         pygame.display.flip()
         clock.tick(60)
 
-# WORDLE GAME
+
 
 def wordle_game():
     play_music("WORDLE")
@@ -5113,8 +5288,8 @@ def wordle_game():
     
     target_word = random.choice(WORDS)
     attempts = 0
-    max_attempts = 6
-    max_attempts_original = 6
+    max_attempts = 5 if player_data.get("challenge_mode", False) else 6
+    max_attempts_original = max_attempts
     game_over = False
     won = False
     new_record = False
@@ -5271,13 +5446,12 @@ def wordle_game():
                                 check_wordle_achievements(attempts, True)
                                 
                             elif attempts >= max_attempts:
-                                game_over = True
-                                won = False
-                            else:
-                                if attempts >= max_attempts_original and has_extra_guess and not extra_guess_used:
-                                    if use_powerup("WORDLE_EXTRA_GUESS"):
-                                        extra_guess_used = True
-                                        max_attempts += 1
+                                if has_extra_guess and not extra_guess_used and use_powerup("WORDLE_EXTRA_GUESS"):
+                                    extra_guess_used = True
+                                    max_attempts += 1
+                                else:
+                                    game_over = True
+                                    won = False
                             
                             current_guess = ""
                         else:
@@ -5420,13 +5594,14 @@ def space_invaders_game():
     while True:
         score = 0
         wave = 1
-        lives = 3 + int(use_powerup("INVADERS_EXTRA_LIFE"))
+        base_lives = 2 if player_data.get("challenge_mode", False) else 3
+        lives = base_lives + int(use_powerup("INVADERS_EXTRA_LIFE"))
         ship = pygame.Rect(WIDTH // 2 - 24, HEIGHT - 65, 48, 24)
         player_bullets = []
         alien_bullets = []
         aliens = create_wave(wave)
         alien_direction = 1
-        alien_speed = 38.0
+        alien_speed = 52.0 if player_data.get("challenge_mode", False) else 38.0
         shot_cooldown = 0.0
         alien_shot_timer = 0.0
         invulnerable_until = 0.0
@@ -5481,7 +5656,8 @@ def space_invaders_game():
                     alien["rect"].x += int(alien_direction * alien_speed * dt)
 
             alien_shot_timer += dt
-            if aliens and alien_shot_timer >= max(0.3, 0.9 - wave * 0.04):
+            shot_interval = max(0.22, 0.65 - wave * 0.04) if player_data.get("challenge_mode", False) else max(0.3, 0.9 - wave * 0.04)
+            if aliens and alien_shot_timer >= shot_interval:
                 shooter = random.choice(aliens)["rect"]
                 alien_bullets.append(
                     pygame.Rect(shooter.centerx - 3, shooter.bottom, 6, 13)
@@ -5489,7 +5665,7 @@ def space_invaders_game():
                 alien_shot_timer = 0.0
 
             for bullet in alien_bullets:
-                bullet.y += int(230 * dt)
+                bullet.y += int((280 if player_data.get("challenge_mode", False) else 230) * dt)
             alien_bullets = [bullet for bullet in alien_bullets if bullet.top < HEIGHT]
 
             remaining_bullets = []
@@ -5575,7 +5751,11 @@ def space_invaders_game():
             draw_text("EARTH NEEDS YOU!", big_font, ship_color, WIDTH // 2, 120)
             draw_text(f"Score: {score}     Wave: {wave}", font, WHITE, WIDTH // 2, 205)
             draw_text(f"Best: {highscores.get('SPACE INVADERS', 0)}", font, YELLOW, WIDTH // 2, 245)
-            draw_text(f"+{xp_earned} XP     +{coins_earned} Coins", font, GREEN, WIDTH // 2, 290)
+            draw_text(
+                f"+{challenge_reward(xp_earned)} XP     "
+                f"+{challenge_reward(coins_earned)} Coins",
+                font, GREEN, WIDTH // 2, 290,
+            )
             if new_record:
                 draw_text("NEW HIGH SCORE!", font, YELLOW, WIDTH // 2, 335)
             draw_button(play_again_button, "PLAY AGAIN", BUTTON_GREEN, BUTTON_GREEN_HOVER)
@@ -5631,9 +5811,9 @@ def fruit_ninja_game():
 
     while True:
         score = 0
-        lives = 3
+        lives = 2 if player_data.get("challenge_mode", False) else 3
         fruits = []
-        spawn_interval = 0.9
+        spawn_interval = 0.68 if player_data.get("challenge_mode", False) else 0.9
         spawn_timer = 0.0
         elapsed = 0.0
         game_over = False
@@ -5725,7 +5905,9 @@ def fruit_ninja_game():
             if spawn_timer >= spawn_interval:
                 fruits.append(spawn_fruit())
                 spawn_timer = 0.0
-                spawn_interval = max(0.38, 0.9 - score * 0.002)
+                base_spawn_interval = 0.68 if player_data.get("challenge_mode", False) else 0.9
+                minimum_spawn_interval = 0.3 if player_data.get("challenge_mode", False) else 0.38
+                spawn_interval = max(minimum_spawn_interval, base_spawn_interval - score * 0.002)
 
             missed_fruits = []
             for fruit in fruits:
@@ -5741,7 +5923,8 @@ def fruit_ninja_game():
                     missed_fruits.append(fruit)
             for fruit in missed_fruits:
                 fruits.remove(fruit)
-            if lives <= 0 or elapsed >= 60:
+            game_duration = 50 if player_data.get("challenge_mode", False) else 60
+            if lives <= 0 or elapsed >= game_duration:
                 game_over = True
 
             screen.fill((18, 22, 38))
@@ -5749,7 +5932,7 @@ def fruit_ninja_game():
             draw_text(f"Score: {score}", font, YELLOW, 95, 24)
             draw_text(f"Best: {highscores.get('FRUIT NINJA', 0)}", small_font, WHITE, WIDTH - 105, 24)
             draw_text(f"Lives: {lives}", small_font, (255, 110, 110), 65, 55)
-            draw_text(f"Time: {max(0, int(60 - elapsed))}", small_font, CYAN, WIDTH - 65, 55)
+            draw_text(f"Time: {max(0, int(game_duration - elapsed))}", small_font, CYAN, WIDTH - 65, 55)
             pygame.draw.line(screen, (90, 100, 125), (0, HEIGHT - 8), (WIDTH, HEIGHT - 8), 3)
 
             for fruit in fruits:
@@ -5796,7 +5979,11 @@ def fruit_ninja_game():
             draw_text("TIME'S UP!", big_font, (255, 125, 90), WIDTH // 2, 120)
             draw_text(f"Score: {score}", font, WHITE, WIDTH // 2, 205)
             draw_text(f"Best: {highscores.get('FRUIT NINJA', 0)}", font, YELLOW, WIDTH // 2, 245)
-            draw_text(f"+{xp_earned} XP     +{coins_earned} Coins", font, GREEN, WIDTH // 2, 290)
+            draw_text(
+                f"+{challenge_reward(xp_earned)} XP     "
+                f"+{challenge_reward(coins_earned)} Coins",
+                font, GREEN, WIDTH // 2, 290,
+            )
             if new_record:
                 draw_text("NEW HIGH SCORE!", font, YELLOW, WIDTH // 2, 335)
             draw_button(play_again_button, "PLAY AGAIN", BUTTON_GREEN, BUTTON_GREEN_HOVER)
@@ -5951,7 +6138,11 @@ def pacman_game():
                     ghosts = reset_ghosts()
                     power_timer = 0.0
 
-            ghost_delay = max(0.12, 0.32 - (level - 1) * 0.025)
+            ghost_delay = (
+                max(0.08, 0.24 - (level - 1) * 0.025)
+                if player_data.get("challenge_mode", False)
+                else max(0.12, 0.32 - (level - 1) * 0.025)
+            )
             if ghost_move_timer >= ghost_delay:
                 ghost_move_timer = 0.0
                 distances = {player_pos: 0}
@@ -6079,7 +6270,11 @@ def pacman_game():
             draw_text("GAME OVER", big_font, RED, WIDTH // 2, 120)
             draw_text(f"Score: {score}     Level: {level}", font, WHITE, WIDTH // 2, 205)
             draw_text(f"Best: {highscores.get('PAC-MAN', 0)}", font, YELLOW, WIDTH // 2, 245)
-            draw_text(f"+{xp_earned} XP     +{coins_earned} Coins", font, GREEN, WIDTH // 2, 290)
+            draw_text(
+                f"+{challenge_reward(xp_earned)} XP     "
+                f"+{challenge_reward(coins_earned)} Coins",
+                font, GREEN, WIDTH // 2, 290,
+            )
             if new_record:
                 draw_text("NEW HIGH SCORE!", font, YELLOW, WIDTH // 2, 335)
             draw_button(play_again_button, "PLAY AGAIN", BUTTON_GREEN, BUTTON_GREEN_HOVER)
@@ -6107,7 +6302,7 @@ def pacman_game():
             break
 
 
-# MAIN PROGRAM
+
 
 session_user = get_current_session()
 if session_user:
