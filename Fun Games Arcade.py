@@ -1,9 +1,18 @@
+import sys
+
+if len(sys.argv) > 1 and sys.argv[1] == "--launch-lava-escape":
+    from lava_escape_game import main as launch_lava_escape
+
+    launch_lava_escape(sys.argv[2:])
+    raise SystemExit
+
 import pygame
 import random
-import sys
 import json
 import os
 import time
+import subprocess
+import tempfile
 
 pygame.init()
 
@@ -128,7 +137,8 @@ def get_default_account_data(username):
             "WORDLE_WINS": 0,
             "PAC-MAN": 0,
             "SPACE INVADERS": 0,
-            "FRUIT NINJA": 0
+            "FRUIT NINJA": 0,
+            "LAVA ESCAPE": 0
         },
         "achievements": {},
         "statistics": {
@@ -150,7 +160,8 @@ def get_default_account_data(username):
                 "WORDLE": 0,
                 "SPACE INVADERS": 0,
                 "PAC-MAN": 0,
-                "FRUIT NINJA": 0
+                "FRUIT NINJA": 0,
+                "LAVA ESCAPE": 0
             }
         }
     }
@@ -820,6 +831,7 @@ DEFAULT_HIGHSCORES = {
     "SPACE INVADERS": 0,
     "PAC-MAN": 0,
     "FRUIT NINJA": 0,
+    "LAVA ESCAPE": 0,
 }
 
 GAME_REWARDS = {
@@ -837,6 +849,7 @@ GAME_REWARDS = {
     "SPACE INVADERS": {"coins": 15, "xp": 15},
     "PAC-MAN": {"coins": 15, "xp": 15},
     "FRUIT NINJA": {"coins": 15, "xp": 15},
+    "LAVA ESCAPE": {"coins": 15, "xp": 15},
 }
 
 
@@ -1133,7 +1146,8 @@ def calculate_xp_reward(game_name, score):
         "WORDLE": 25,
         "SPACE INVADERS": 15,
         "PAC-MAN": 15,
-        "FRUIT NINJA": 15
+        "FRUIT NINJA": 15,
+        "LAVA ESCAPE": 15
     }
 
     base = base_xp.get(game_name, 10)
@@ -1610,7 +1624,8 @@ GAME_MUSIC = {
     "WORDLE": os.path.join(MUSIC_DIR, "WordleGameBackgroundMusic.mp3"),
     "SPACE INVADERS": os.path.join(MUSIC_DIR, "SpaceInvadersGameBackgroundMusic.mp3"),
     "PAC-MAN": os.path.join(MUSIC_DIR, "PacmanGameBackgroundMusic.mp3"),
-    "FRUIT NINJA": os.path.join(MUSIC_DIR, "FruitNinjaGameBackgroundMusic.mp3")
+    "FRUIT NINJA": os.path.join(MUSIC_DIR, "FruitNinjaGameBackgroundMusic.mp3"),
+    "LAVA ESCAPE": os.path.join(MUSIC_DIR, "LavaEscapeGameBackgroundMusic.mp3")
 }
 
 CURRENT_MUSIC_FILE = None
@@ -2406,7 +2421,9 @@ def launch_game(game):
     game_function = game[3]
 
     stop_music()
-    game_function()
+    game_result = game_function()
+    if game_result is False:
+        return
 
     reward = GAME_REWARDS.get(game_name, {"coins": 5, "xp": 5})
     reward_game_played(game_name, reward["coins"], reward["xp"])
@@ -2427,6 +2444,98 @@ def launch_game(game):
     if current_user:
         save_current_account(current_user)
 
+
+def show_game_launch_error(message):
+    while True:
+        screen.fill((15, 18, 30))
+        draw_text("COULD NOT START LAVA ESCAPE", font, RED, WIDTH // 2, 210)
+        draw_text(message[:90], small_font, WHITE, WIDTH // 2, 270)
+        draw_text("Press any key to return", small_font, GRAY, WIDTH // 2, 335)
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                quit_game()
+            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                return
+
+        clock.tick(60)
+
+
+def launch_ursina_game():
+    result_handle = tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".json",
+        prefix="lava_escape_",
+        dir=DATA_DIR,
+        delete=False,
+        encoding="utf-8",
+    )
+    result_path = result_handle.name
+    result_handle.close()
+
+    try:
+        if getattr(sys, "frozen", False):
+            command = [sys.executable, "--launch-lava-escape"]
+        else:
+            game_path = os.path.join(BASE_DIR, "lava_escape_game.py")
+            if not os.path.isfile(game_path):
+                show_game_launch_error("lava_escape_game.py is missing.")
+                return False
+            command = [sys.executable, game_path]
+
+        command.extend(["--result-file", result_path])
+        if player_data.get("challenge_mode", False):
+            command.append("--challenge-mode")
+
+        play_music("LAVA ESCAPE")
+        try:
+            result = subprocess.run(
+                command,
+                cwd=BASE_DIR,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+        except OSError as error:
+            launch_error = error
+        else:
+            launch_error = None
+        finally:
+            stop_music()
+
+        if launch_error is not None:
+            show_game_launch_error(str(launch_error))
+            return False
+
+        if result.returncode != 0:
+            error_message = result.stderr.strip() or result.stdout.strip()
+            if not error_message:
+                error_message = f"Game process exited with status {result.returncode}."
+            show_game_launch_error(error_message.splitlines()[-1])
+            return False
+
+        try:
+            with open(result_path, "r", encoding="utf-8") as result_file:
+                game_result = json.load(result_file)
+        except (json.JSONDecodeError, OSError) as error:
+            show_game_launch_error(f"Could not read the game score: {error}")
+            return False
+
+        score = game_result.get("score") if isinstance(game_result, dict) else None
+        if isinstance(score, bool) or not isinstance(score, int) or score < 0:
+            show_game_launch_error("The game returned an invalid score.")
+            return False
+
+        update_highscore("LAVA ESCAPE", score)
+        player_data["total_score"] += score
+        save_player_data(player_data)
+        return None
+    finally:
+        if os.path.exists(result_path):
+            os.remove(result_path)
 
 
 def start_menu():
@@ -3054,6 +3163,7 @@ def game_select_menu():
         ("2048", "🔢", "Join numbers into a big number!", game_2048, LIGHT_PURPLE),
         ("PONG", "🏓", "Try to catch the ball and throw it away!", pong_game, LIGHT_ORANGE),
         ("WORDLE", "W", "Guess the 5-letter word!", wordle_game, (83, 141, 78)),
+        ("LAVA ESCAPE", "🌋", "Dodge rolling balls and moving walls to survive!", launch_ursina_game, (245, 105, 45)),
         ("SPACE INVADERS", "A", "Defend Earth from waves of aliens!", space_invaders_game, (80, 220, 180)),
         ("PAC-MAN", "P", "Eat the pellets and avoid the ghosts!", pacman_game, (255, 215, 0)),
         ("FRUIT NINJA", "F", "Slice fruit as it flies across the screen!", fruit_ninja_game, (255, 100, 90)),
